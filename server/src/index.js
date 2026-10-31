@@ -1,0 +1,278 @@
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { RoomManager, getYouTubeMetadata } from './rooms.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDist = path.join(__dirname, '../../client/dist');
+
+const app = express();
+const server = http.createServer(app);
+
+// CORS cho phép client kết nối từ bất kỳ đâu (localhost hoặc Vercel/Netlify)
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+});
+
+app.use(cors());
+app.use(express.json());
+
+const roomManager = new RoomManager();
+
+// REST API Health Check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+// REST API lấy thông tin video YouTube
+app.get('/api/video-info', async (req, res) => {
+  const { url } = req.query;
+  if (!url) {
+    return res.status(400).json({ error: 'URL không được để trống' });
+  }
+  try {
+    const meta = await getYouTubeMetadata(String(url));
+    res.json(meta);
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Không thể lấy thông tin video' });
+  }
+});
+
+// Socket.io Realtime Logic
+io.on('connection', (socket) => {
+  let currentRoomId = null;
+
+  // Tham gia phòng
+  socket.on('join-room', ({ roomId, nickname, avatar, color }) => {
+    const cleanRoomId = (roomId || 'cinema-main').toLowerCase().trim();
+    currentRoomId = cleanRoomId;
+    socket.join(cleanRoomId);
+
+    const { room, user } = roomManager.addUser(cleanRoomId, socket.id, { nickname, avatar, color });
+
+    // Gửi state đầy đủ cho người mới vào
+    socket.emit('room-state', roomManager.getRoomState(cleanRoomId));
+
+    // Báo cho các người khác trong phòng biết có người mới vào
+    socket.to(cleanRoomId).emit('user-joined', {
+      user,
+      totalUsers: room.users.size,
+    });
+
+    console.log(`[${cleanRoomId}] User "${user.nickname}" (${socket.id}) joined`);
+  });
+
+  // Chọn ghế ngồi
+  socket.on('select-seat', ({ seatId }) => {
+    if (!currentRoomId) return;
+    const success = roomManager.assignSeat(currentRoomId, socket.id, seatId);
+    if (success) {
+      const room = roomManager.getOrCreateRoom(currentRoomId);
+      io.to(currentRoomId).emit('seats-updated', {
+        seats: room.seats,
+        users: Array.from(room.users.values()),
+      });
+    }
+  });
+
+  // Rời ghế ngồi
+  socket.on('leave-seat', () => {
+    if (!currentRoomId) return;
+    const success = roomManager.leaveSeat(currentRoomId, socket.id);
+    if (success) {
+      const room = roomManager.getOrCreateRoom(currentRoomId);
+      io.to(currentRoomId).emit('seats-updated', {
+        seats: room.seats,
+        users: Array.from(room.users.values()),
+      });
+    }
+  });
+
+  // Đồng bộ Play / Pause / Seek
+  socket.on('sync-action', ({ action, time }) => {
+    if (!currentRoomId) return;
+    const updatedPlayback = roomManager.updatePlayback(currentRoomId, { action, time });
+    if (updatedPlayback) {
+      // Broadcast tới tất cả client khác trong phòng
+      socket.to(currentRoomId).emit('sync-playback', {
+        action,
+        time: updatedPlayback.currentTime,
+        isPlaying: updatedPlayback.isPlaying,
+        by: socket.id,
+      });
+    }
+  });
+
+  // Thêm video vào Queue hoặc Phát ngay
+  socket.on('add-video', async ({ url, playNow }) => {
+    if (!currentRoomId) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    const user = room.users.get(socket.id);
+    const addedByName = user ? user.nickname : 'Khách';
+
+    try {
+      const videoMeta = await getYouTubeMetadata(url);
+      videoMeta.addedBy = addedByName;
+      videoMeta.addedAt = Date.now();
+
+      if (playNow || !room.currentVideo) {
+        room.currentVideo = videoMeta;
+        room.playback = {
+          isPlaying: true,
+          currentTime: 0,
+          lastUpdatedAt: Date.now(),
+        };
+        room.skipVotes.clear();
+        io.to(currentRoomId).emit('video-changed', {
+          video: room.currentVideo,
+          playback: room.playback,
+        });
+      } else {
+        room.queue.push(videoMeta);
+        io.to(currentRoomId).emit('queue-updated', room.queue);
+      }
+    } catch (err) {
+      socket.emit('error-message', err.message || 'Không thể thêm video này');
+    }
+  });
+
+  // Xóa video khỏi Queue
+  socket.on('remove-from-queue', ({ index }) => {
+    if (!currentRoomId) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    if (index >= 0 && index < room.queue.length) {
+      room.queue.splice(index, 1);
+      io.to(currentRoomId).emit('queue-updated', room.queue);
+    }
+  });
+
+  // Chuyển / Skip bài hiện tại
+  socket.on('skip-video', () => {
+    if (!currentRoomId) return;
+    const nextVideo = roomManager.playNext(currentRoomId);
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    io.to(currentRoomId).emit('video-changed', {
+      video: nextVideo,
+      playback: room.playback,
+    });
+    io.to(currentRoomId).emit('queue-updated', room.queue);
+  });
+
+  // Bỏ phiếu Skip (Vote Skip)
+  socket.on('vote-skip', () => {
+    if (!currentRoomId) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    room.skipVotes.add(socket.id);
+
+    const neededVotes = Math.ceil(room.users.size / 2);
+    if (room.skipVotes.size >= neededVotes) {
+      const nextVideo = roomManager.playNext(currentRoomId);
+      io.to(currentRoomId).emit('video-changed', {
+        video: nextVideo,
+        playback: room.playback,
+      });
+      io.to(currentRoomId).emit('queue-updated', room.queue);
+    } else {
+      io.to(currentRoomId).emit('vote-skip-updated', {
+        current: room.skipVotes.size,
+        needed: neededVotes,
+      });
+    }
+  });
+
+  // Gửi tin nhắn Chat
+  socket.on('send-message', ({ text }) => {
+    if (!currentRoomId || !text || !text.trim()) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    const user = room.users.get(socket.id);
+    if (!user) return;
+
+    const message = {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      userId: socket.id,
+      nickname: user.nickname,
+      avatar: user.avatar,
+      color: user.color,
+      seatId: user.seatId,
+      text: text.trim().slice(0, 300),
+      timestamp: Date.now(),
+    };
+
+    room.chat.push(message);
+    if (room.chat.length > 100) room.chat.shift();
+
+    io.to(currentRoomId).emit('new-message', message);
+  });
+
+  // Gửi Reaction emoji
+  socket.on('send-reaction', ({ emoji }) => {
+    if (!currentRoomId) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    const user = room.users.get(socket.id);
+
+    io.to(currentRoomId).emit('new-reaction', {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      emoji: emoji || '❤️',
+      seatId: user ? user.seatId : null,
+      nickname: user ? user.nickname : 'Khách',
+      color: user ? user.color : '#e11d48',
+    });
+  });
+
+  // Khi ngắt kết nối
+  socket.on('disconnect', () => {
+    if (currentRoomId) {
+      const result = roomManager.removeUser(socket.id);
+      if (result) {
+        const room = roomManager.rooms.get(result.roomId);
+        if (room) {
+          io.to(result.roomId).emit('user-left', {
+            userId: socket.id,
+            nickname: result.user.nickname,
+            hostId: room.hostId,
+            totalUsers: room.users.size,
+            seats: room.seats,
+            users: Array.from(room.users.values()),
+          });
+        }
+      }
+    }
+  });
+});
+
+// Periodic Sync: Mỗi 4 giây phát tín hiệu chuẩn hoá thời gian cho mọi phòng
+setInterval(() => {
+  for (const [roomId, room] of roomManager.rooms.entries()) {
+    if (room.users.size > 0 && room.currentVideo && room.playback.isPlaying) {
+      const calculatedTime = roomManager.calculateCurrentTime(room.playback);
+      io.to(roomId).emit('heartbeat-sync', {
+        time: calculatedTime,
+        isPlaying: room.playback.isPlaying,
+      });
+    }
+  }
+}, 4000);
+
+// Phục vụ frontend tĩnh nếu đã build
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => {
+  console.log(`🎬 CinéParty Cinema Server running on http://localhost:${PORT}`);
+});

@@ -1,0 +1,20 @@
+{
+  "name": "cineparty",
+  "version": "1.0.0",
+  "description": "Rạp phim ảo xem YouTube và nghe nhạc cùng bạn bè",
+  "type": "module",
+  "scripts": {
+    "start": "node server/src/index.js",
+    "build": "npm run build --prefix client",
+    "dev:server": "node --watch server/src/index.js",
+    "dev:client": "npm run dev --prefix client"
+  },
+  "keywords": [
+    "watch-party",
+    "youtube-sync",
+    "virtual-cinema",
+    "listen-together"
+  ],
+  "author": "",
+  "license": "MIT"
+}
