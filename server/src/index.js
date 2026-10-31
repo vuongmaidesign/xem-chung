@@ -14,7 +14,6 @@ const clientDist = path.join(__dirname, '../../client/dist');
 const app = express();
 const server = http.createServer(app);
 
-// CORS cho phép client kết nối từ bất kỳ đâu (localhost hoặc Vercel/Netlify)
 const io = new Server(server, {
   cors: {
     origin: '*',
@@ -52,7 +51,7 @@ io.on('connection', (socket) => {
 
   // Tham gia phòng
   socket.on('join-room', ({ roomId, nickname, avatar, color }) => {
-    const cleanRoomId = (roomId || 'cinema-main').toLowerCase().trim();
+    const cleanRoomId = (roomId || 'phong-01').toLowerCase().trim();
     currentRoomId = cleanRoomId;
     socket.join(cleanRoomId);
 
@@ -61,13 +60,12 @@ io.on('connection', (socket) => {
     // Gửi state đầy đủ cho người mới vào
     socket.emit('room-state', roomManager.getRoomState(cleanRoomId));
 
-    // Báo cho các người khác trong phòng biết có người mới vào
     socket.to(cleanRoomId).emit('user-joined', {
       user,
       totalUsers: room.users.size,
     });
 
-    console.log(`[${cleanRoomId}] User "${user.nickname}" (${socket.id}) joined`);
+    console.log(`[${cleanRoomId}] Khán giả "${user.nickname}" (${socket.id}) vào rạp`);
   });
 
   // Chọn ghế ngồi
@@ -101,13 +99,44 @@ io.on('connection', (socket) => {
     if (!currentRoomId) return;
     const updatedPlayback = roomManager.updatePlayback(currentRoomId, { action, time });
     if (updatedPlayback) {
-      // Broadcast tới tất cả client khác trong phòng
       socket.to(currentRoomId).emit('sync-playback', {
         action,
         time: updatedPlayback.currentTime,
         isPlaying: updatedPlayback.isPlaying,
         by: socket.id,
       });
+    }
+  });
+
+  // Khi hết video (Client báo về): Tự động chuyển bài hoặc LẶP LẠI FULL BÀI TỪ ĐẦU
+  socket.on('video-ended', () => {
+    if (!currentRoomId) return;
+    const result = roomManager.playNext(currentRoomId);
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+
+    if (result) {
+      io.to(currentRoomId).emit('video-changed', {
+        video: result.video,
+        playback: room.playback,
+        isLoop: result.isLoop,
+      });
+      io.to(currentRoomId).emit('queue-updated', room.queue);
+    }
+  });
+
+  // Bấm chuyển / Skip bài hiện tại
+  socket.on('skip-video', () => {
+    if (!currentRoomId) return;
+    const result = roomManager.playNext(currentRoomId);
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+
+    if (result) {
+      io.to(currentRoomId).emit('video-changed', {
+        video: result.video,
+        playback: room.playback,
+        isLoop: result.isLoop,
+      });
+      io.to(currentRoomId).emit('queue-updated', room.queue);
     }
   });
 
@@ -134,6 +163,7 @@ io.on('connection', (socket) => {
         io.to(currentRoomId).emit('video-changed', {
           video: room.currentVideo,
           playback: room.playback,
+          isLoop: false,
         });
       } else {
         room.queue.push(videoMeta);
@@ -154,36 +184,36 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Chuyển / Skip bài hiện tại
-  socket.on('skip-video', () => {
-    if (!currentRoomId) return;
-    const nextVideo = roomManager.playNext(currentRoomId);
-    const room = roomManager.getOrCreateRoom(currentRoomId);
-    io.to(currentRoomId).emit('video-changed', {
-      video: nextVideo,
-      playback: room.playback,
-    });
-    io.to(currentRoomId).emit('queue-updated', room.queue);
-  });
-
-  // Bỏ phiếu Skip (Vote Skip)
+  // Bỏ phiếu Skip (Vote Skip) - Chuẩn 35% như choigivui.com
   socket.on('vote-skip', () => {
     if (!currentRoomId) return;
     const room = roomManager.getOrCreateRoom(currentRoomId);
-    room.skipVotes.add(socket.id);
+    const hasVoted = room.skipVotes.has(socket.id);
 
-    const neededVotes = Math.ceil(room.users.size / 2);
-    if (room.skipVotes.size >= neededVotes) {
-      const nextVideo = roomManager.playNext(currentRoomId);
+    // Toggle vote
+    if (hasVoted) {
+      room.skipVotes.delete(socket.id);
+    } else {
+      room.skipVotes.add(socket.id);
+    }
+
+    const totalUsers = room.users.size || 1;
+    const requiredVotes = Math.max(1, Math.ceil(totalUsers * 0.35));
+
+    if (room.skipVotes.size >= requiredVotes) {
+      const result = roomManager.playNext(currentRoomId);
       io.to(currentRoomId).emit('video-changed', {
-        video: nextVideo,
+        video: result?.video || null,
         playback: room.playback,
+        isLoop: result?.isLoop || false,
       });
       io.to(currentRoomId).emit('queue-updated', room.queue);
     } else {
       io.to(currentRoomId).emit('vote-skip-updated', {
         current: room.skipVotes.size,
-        needed: neededVotes,
+        required: requiredVotes,
+        totalUsers,
+        percent: Math.round((room.skipVotes.size / totalUsers) * 100),
       });
     }
   });
@@ -222,8 +252,8 @@ io.on('connection', (socket) => {
       id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       emoji: emoji || '❤️',
       seatId: user ? user.seatId : null,
-      nickname: user ? user.nickname : 'Khách',
-      color: user ? user.color : '#e11d48',
+      nickname: user ? user.nickname : 'Khán giả',
+      color: user ? user.color : '#d8ef82',
     });
   });
 
@@ -248,7 +278,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Periodic Sync: Mỗi 4 giây phát tín hiệu chuẩn hoá thời gian cho mọi phòng
+// Periodic Sync: Mỗi 3.5 giây phát tín hiệu chuẩn hoá thời gian cho mọi phòng
 setInterval(() => {
   for (const [roomId, room] of roomManager.rooms.entries()) {
     if (room.users.size > 0 && room.currentVideo && room.playback.isPlaying) {
@@ -259,7 +289,7 @@ setInterval(() => {
       });
     }
   }
-}, 4000);
+}, 3500);
 
 // Phục vụ frontend tĩnh nếu đã build
 if (fs.existsSync(clientDist)) {
@@ -274,5 +304,5 @@ if (fs.existsSync(clientDist)) {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`🎬 CinéParty Cinema Server running on http://localhost:${PORT}`);
+  console.log(`🎬 WETUBE CINÉ Server running on http://localhost:${PORT}`);
 });

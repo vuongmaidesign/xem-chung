@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-// Khởi tạo sơ đồ rạp 4 hàng ghế (A, B, C, D), mỗi hàng 8 ghế (tổng 32 ghế)
+// Khởi tạo sơ đồ rạp 10 hàng ghế (A đến J), mỗi hàng 10 ghế (tổng cộng chuẩn 100 ghế như choigivui.com)
 export function createDefaultSeats() {
-  const rows = ['A', 'B', 'C', 'D'];
-  const seatsPerRow = 8;
+  const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  const seatsPerRow = 10;
   const seats = [];
 
   rows.forEach((row, rowIndex) => {
@@ -13,7 +13,7 @@ export function createDefaultSeats() {
         row,
         number: num,
         rowIndex,
-        occupiedBy: null, // userId
+        occupiedBy: null, // socketId
       });
     }
   });
@@ -25,10 +25,6 @@ export function createDefaultSeats() {
 export async function getYouTubeMetadata(input) {
   let videoId = '';
 
-  // Extract video ID từ các dạng link YouTube:
-  // https://www.youtube.com/watch?v=XXXX
-  // https://youtu.be/XXXX
-  // https://www.youtube.com/shorts/XXXX
   const urlRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/\s]{11})/;
   const match = input.match(urlRegex);
 
@@ -54,7 +50,6 @@ export async function getYouTubeMetadata(input) {
       author = res.data.author_name || author;
     }
   } catch (err) {
-    // Không sao, vẫn có videoId và thumbnail để phát
     console.warn(`Could not fetch oEmbed for ${videoId}, using fallback.`);
   }
 
@@ -73,21 +68,21 @@ export class RoomManager {
   }
 
   getOrCreateRoom(roomId) {
-    const cleanId = (roomId || 'cinema-main').toLowerCase().trim();
+    const cleanId = (roomId || 'phong-01').toLowerCase().trim();
     if (!this.rooms.has(cleanId)) {
       this.rooms.set(cleanId, {
         id: cleanId,
-        name: `Phòng ${cleanId}`,
+        name: `PHÒNG ${cleanId.replace(/[^0-9a-zA-Z]/g, ' ').toUpperCase() || '01'}`,
         hostId: null,
         users: new Map(), // socketId -> user
         seats: createDefaultSeats(),
         currentVideo: {
-          id: '5qap5aO4i9A', // Lofi hip hop chill beats mặc định
+          id: '5qap5aO4i9A', // Lofi hip hop radio mặc định
           title: 'lofi hip hop radio - beats to relax/study to',
           author: 'Lofi Girl',
           thumbnail: 'https://img.youtube.com/vi/5qap5aO4i9A/hqdefault.jpg',
           url: 'https://www.youtube.com/watch?v=5qap5aO4i9A',
-          addedBy: 'Hệ thống',
+          addedBy: 'WETUBE CINÉ',
         },
         playback: {
           isPlaying: true,
@@ -116,6 +111,7 @@ export class RoomManager {
 
     const usersList = Array.from(room.users.values());
     const actualCurrentTime = this.calculateCurrentTime(room.playback);
+    const requiredVotes = Math.max(1, Math.ceil(usersList.length * 0.35)); // Chuẩn 35% như choigivui.com
 
     return {
       id: room.id,
@@ -129,8 +125,9 @@ export class RoomManager {
         currentTime: actualCurrentTime,
       },
       queue: room.queue,
-      chat: room.chat.slice(-50),
+      chat: room.chat.slice(-60),
       skipVotesCount: room.skipVotes.size,
+      requiredVotes,
       totalUsers: usersList.length,
     };
   }
@@ -139,16 +136,15 @@ export class RoomManager {
     const room = this.getOrCreateRoom(roomId);
     const user = {
       id: socketId,
-      nickname: profile.nickname || `Khách_${socketId.slice(0, 4)}`,
+      nickname: profile.nickname || `Khán giả_${socketId.slice(0, 4)}`,
       avatar: profile.avatar || '🍿',
-      color: profile.color || '#e11d48',
+      color: profile.color || '#d8ef82', // Màu neon chuẩn của choigivui
       seatId: null,
       joinedAt: Date.now(),
     };
 
     room.users.set(socketId, user);
 
-    // Người đầu tiên vào phòng sẽ là Host
     if (!room.hostId) {
       room.hostId = socketId;
     }
@@ -161,32 +157,17 @@ export class RoomManager {
       if (room.users.has(socketId)) {
         const user = room.users.get(socketId);
 
-        // Giải phóng ghế nếu đang ngồi
         if (user.seatId) {
           const seat = room.seats.find((s) => s.id === user.seatId);
           if (seat) seat.occupiedBy = null;
         }
 
-        // Bỏ vote skip
         room.skipVotes.delete(socketId);
-
-        // Xoá user
         room.users.delete(socketId);
 
-        // Nếu là Host, chuyển quyền cho người tiếp theo
         if (room.hostId === socketId) {
           const nextUser = room.users.keys().next().value;
           room.hostId = nextUser || null;
-        }
-
-        // Nếu phòng trống rỗng và không phải phòng chính thì dọn dẹp sau 5 phút
-        if (room.users.size === 0 && roomId !== 'cinema-main') {
-          setTimeout(() => {
-            const current = this.rooms.get(roomId);
-            if (current && current.users.size === 0) {
-              this.rooms.delete(roomId);
-            }
-          }, 300000);
         }
 
         return { roomId, user };
@@ -204,10 +185,9 @@ export class RoomManager {
 
     const targetSeat = room.seats.find((s) => s.id === seatId);
     if (!targetSeat || (targetSeat.occupiedBy && targetSeat.occupiedBy !== socketId)) {
-      return false; // Ghế đã có người ngồi
+      return false; // Ghế đã có người
     }
 
-    // Nếu user đang ngồi ghế khác, giải phóng ghế cũ
     if (user.seatId) {
       const oldSeat = room.seats.find((s) => s.id === user.seatId);
       if (oldSeat) oldSeat.occupiedBy = null;
@@ -251,10 +231,14 @@ export class RoomManager {
     return room.playback;
   }
 
+  // Chuyển bài hoặc Lặp lại FULL bài nếu hết link
   playNext(roomId) {
     const room = this.rooms.get(roomId);
     if (!room) return null;
 
+    room.skipVotes.clear();
+
+    // Trường hợp 1: Có bài trong hàng đợi (Queue) -> Chuyển sang bài tiếp theo
     if (room.queue.length > 0) {
       room.currentVideo = room.queue.shift();
       room.playback = {
@@ -262,9 +246,19 @@ export class RoomManager {
         currentTime: 0,
         lastUpdatedAt: Date.now(),
       };
-      room.skipVotes.clear();
-      return room.currentVideo;
+      return { video: room.currentVideo, isLoop: false };
     }
+
+    // Trường hợp 2: Hàng đợi rỗng -> LẶP LẠI FULL BÀI HIỆN TẠI (Full Replay từ giây 0)
+    if (room.currentVideo) {
+      room.playback = {
+        isPlaying: true,
+        currentTime: 0,
+        lastUpdatedAt: Date.now(),
+      };
+      return { video: room.currentVideo, isLoop: true };
+    }
+
     return null;
   }
 }

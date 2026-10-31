@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Pause, Volume2, VolumeX, SkipForward } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, SkipForward, Film, Tv } from 'lucide-react';
 
 export default function YouTubePlayer({
   video,
@@ -14,6 +14,7 @@ export default function YouTubePlayer({
   const isSyncingRef = useRef(false);
   const isDraggingRef = useRef(false);
   const suppressSyncUntilRef = useRef(0);
+  const currentVideoIdRef = useRef(video?.id);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -21,8 +22,9 @@ export default function YouTubePlayer({
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [seekPreviewTime, setSeekPreviewTime] = useState(0);
+  const [isReady, setIsReady] = useState(false);
 
-  // Khởi tạo YouTube Player an toàn (chỉ tạo 1 instance duy nhất)
+  // Khởi tạo YouTube Player 1 instance an toàn
   useEffect(() => {
     let checkInterval = null;
     let isMounted = true;
@@ -30,16 +32,15 @@ export default function YouTubePlayer({
     const initPlayer = () => {
       if (!isMounted || !window.YT || !window.YT.Player || !containerRef.current) return;
 
-      // Hủy player cũ và dọn sạch DOM bên trong để không bao giờ bị nhân đôi iframe
       if (playerRef.current) {
         try {
           playerRef.current.destroy();
         } catch (e) {}
         playerRef.current = null;
       }
-      containerRef.current.innerHTML = '<div id="yt-internal-player"></div>';
+      containerRef.current.innerHTML = '<div id="yt-screen-frame"></div>';
 
-      playerRef.current = new window.YT.Player('yt-internal-player', {
+      playerRef.current = new window.YT.Player('yt-screen-frame', {
         height: '100%',
         width: '100%',
         videoId: video ? video.id : '5qap5aO4i9A',
@@ -55,8 +56,10 @@ export default function YouTubePlayer({
         events: {
           onReady: (event) => {
             if (!isMounted) return;
+            setIsReady(true);
             event.target.setVolume(volume);
-            if (playback?.currentTime) {
+
+            if (playback?.currentTime && playback.currentTime > 0) {
               event.target.seekTo(playback.currentTime, true);
             }
             if (playback?.isPlaying) {
@@ -67,8 +70,12 @@ export default function YouTubePlayer({
           onStateChange: (event) => {
             if (!isMounted) return;
 
+            // KHI HẾT BÀI: Báo cho server để chuyển bài hoặc lặp lại FULL bài từ đầu
             if (event.data === window.YT.PlayerState.ENDED) {
-              if (onVideoEnded) onVideoEnded();
+              suppressSyncUntilRef.current = Date.now() + 3000;
+              if (onVideoEnded) {
+                onVideoEnded();
+              }
               return;
             }
 
@@ -116,11 +123,30 @@ export default function YouTubePlayer({
     };
   }, []);
 
-  // Đổi bài khi video thay đổi
+  // Xử lý đổi bài hoặc LẶP LẠI BÀI CŨ
   useEffect(() => {
-    if (playerRef.current && playerRef.current.loadVideoById && video?.id) {
+    if (!playerRef.current || !video?.id) return;
+
+    // Nếu cùng videoId (Lặp lại full bài cũ khi hết link)
+    if (currentVideoIdRef.current === video.id) {
+      if (playback?.currentTime === 0) {
+        isSyncingRef.current = true;
+        suppressSyncUntilRef.current = Date.now() + 2500;
+        playerRef.current.seekTo(0, true);
+        playerRef.current.playVideo();
+        setIsPlaying(true);
+        setTimeout(() => {
+          isSyncingRef.current = false;
+        }, 500);
+      }
+      return;
+    }
+
+    // Nếu là video mới hoàn toàn
+    currentVideoIdRef.current = video.id;
+    if (playerRef.current.loadVideoById) {
       isSyncingRef.current = true;
-      suppressSyncUntilRef.current = Date.now() + 1200;
+      suppressSyncUntilRef.current = Date.now() + 2500;
 
       playerRef.current.loadVideoById({
         videoId: video.id,
@@ -131,14 +157,11 @@ export default function YouTubePlayer({
         if (playback?.isPlaying) {
           playerRef.current?.playVideo();
           setIsPlaying(true);
-        } else {
-          playerRef.current?.pauseVideo();
-          setIsPlaying(false);
         }
         isSyncingRef.current = false;
-      }, 500);
+      }, 600);
     }
-  }, [video?.id]);
+  }, [video?.id, playback?.currentTime]);
 
   // Đồng bộ Playback từ Server (Play/Pause/Tua)
   useEffect(() => {
@@ -148,13 +171,13 @@ export default function YouTubePlayer({
     const currentLocalTime = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
     const timeDiff = Math.abs(currentLocalTime - (playback?.currentTime || 0));
 
-    // Chỉ tua nếu chênh lệch đáng kể (> 2.0s) để tránh giật lag tiếng
-    if (timeDiff > 2.0 && playback?.currentTime !== undefined) {
+    // Chỉ tua khi chênh lệch > 2.5s để tránh giật lag tiếng và không bao giờ lặp lại 3s đầu
+    if (timeDiff > 2.5 && playback?.currentTime !== undefined) {
       isSyncingRef.current = true;
       playerRef.current.seekTo(playback.currentTime, true);
       setTimeout(() => {
         isSyncingRef.current = false;
-      }, 300);
+      }, 400);
     }
 
     if (playback?.isPlaying && !isPlaying) {
@@ -163,18 +186,18 @@ export default function YouTubePlayer({
       setIsPlaying(true);
       setTimeout(() => {
         isSyncingRef.current = false;
-      }, 300);
+      }, 400);
     } else if (!playback?.isPlaying && isPlaying) {
       isSyncingRef.current = true;
       playerRef.current.pauseVideo();
       setIsPlaying(false);
       setTimeout(() => {
         isSyncingRef.current = false;
-      }, 300);
+      }, 400);
     }
   }, [playback?.isPlaying, playback?.currentTime]);
 
-  // Thanh tiến trình chạy theo video
+  // Cập nhật thanh tiến trình chạy theo bài
   useEffect(() => {
     const timer = setInterval(() => {
       if (playerRef.current && playerRef.current.getCurrentTime && !isDraggingRef.current) {
@@ -203,13 +226,13 @@ export default function YouTubePlayer({
     }
   };
 
-  // KHI KÉO THANH TUA: Chỉ cập nhật số giây xem trước (KHÔNG gọi seekTo để tránh spam lệnh & chồng tiếng)
+  // Kéo thanh tua (Chỉ đổi preview, không gọi seekTo)
   const handleSeekChange = (e) => {
     isDraggingRef.current = true;
     setSeekPreviewTime(parseFloat(e.target.value));
   };
 
-  // KHI THẢ TAY / THẢ CHUỘT: Mới thực hiện seek 1 lần duy nhất và gửi lên server
+  // Thả tay/chuột: Seek 1 lần duy nhất
   const handleSeekCommit = () => {
     if (!isDraggingRef.current) return;
     isDraggingRef.current = false;
@@ -219,7 +242,7 @@ export default function YouTubePlayer({
 
     if (playerRef.current && playerRef.current.seekTo) {
       isSyncingRef.current = true;
-      suppressSyncUntilRef.current = Date.now() + 1500; // Khóa nhận sync từ server trong 1.5s để chống dội tín hiệu
+      suppressSyncUntilRef.current = Date.now() + 2000;
 
       playerRef.current.seekTo(newTime, true);
       if (onSyncAction) {
@@ -228,7 +251,7 @@ export default function YouTubePlayer({
 
       setTimeout(() => {
         isSyncingRef.current = false;
-      }, 400);
+      }, 500);
     }
   };
 
@@ -262,13 +285,35 @@ export default function YouTubePlayer({
   };
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto rounded-2xl overflow-hidden cinema-screen-glow bg-black border border-rose-500/20 group">
-      {/* Vòm màn hình cong mô phỏng rạp chiếu */}
-      <div className="absolute top-0 inset-x-0 h-4 bg-gradient-to-b from-rose-500/30 to-transparent pointer-events-none z-10 cinema-curved-bar" />
+    <div className="theater-viewport w-full max-w-5xl mx-auto flex flex-col group">
+      {/* Vòm Màn Hình Chiếu chuẩn wetube ciné */}
+      <div className="seatmap-screen select-none">
+        <Film size={14} className="text-[#d8ef82]" />
+        <span>MÀN HÌNH CHIẾU</span>
+      </div>
 
-      {/* Frame video YouTube */}
-      <div className="w-full aspect-video bg-black relative flex items-center justify-center">
+      {/* Frame Video YouTube */}
+      <div className="w-full aspect-video bg-[#090e0b] relative flex items-center justify-center overflow-hidden">
         <div ref={containerRef} className="w-full h-full pointer-events-none" />
+
+        {/* Màn hình chờ khi chưa có video */}
+        {!video && (
+          <div className="absolute inset-0 bg-[#090e0b] flex flex-col items-center justify-center p-6 text-center select-none">
+            <div className="w-16 h-16 rounded-full bg-[#d8ef82]/10 border border-[#d8ef82]/20 flex items-center justify-center mb-4 text-[#d8ef82]">
+              <Film size={32} />
+            </div>
+            <span className="text-[10px] tracking-[2px] font-bold text-[#d8ef82] uppercase mb-1">
+              MỘT CHIẾC RẠP. CẢ HỘI CÙNG XEM.
+            </span>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
+              Chỗ này còn trống.<br />
+              <i className="text-sm sm:text-base font-normal text-[#cad6bb]">Chờ bạn và một bộ phim hay.</i>
+            </h2>
+            <p className="text-xs text-[#9da98d] max-w-md">
+              Chọn một chỗ ngồi · Gửi video bạn thích · Bình chọn cùng nhau
+            </p>
+          </div>
+        )}
 
         {/* Lớp overlay click để Play/Pause */}
         <div
@@ -278,11 +323,11 @@ export default function YouTubePlayer({
         />
       </div>
 
-      {/* Thanh điều khiển rạp chiếu */}
-      <div className="bg-gradient-to-t from-[#10121a] via-[#10121a]/95 to-transparent px-4 py-3 border-t border-white/5 flex flex-col gap-2">
+      {/* Thanh điều khiển tối giản chuẩn phong cách rạp phim wetube ciné */}
+      <div className="bg-[#131c16]/95 border-t border-[#d6e5c6]/15 px-4 py-2.5 flex flex-col gap-2">
         {/* Progress Bar (Thanh Tua) */}
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-gray-400">
+          <span className="text-[11px] font-mono text-[#9da98d]">
             {formatTime(isDraggingRef.current ? seekPreviewTime : currentTime)}
           </span>
           <input
@@ -294,36 +339,36 @@ export default function YouTubePlayer({
             onMouseUp={handleSeekCommit}
             onTouchEnd={handleSeekCommit}
             onKeyUp={handleSeekCommit}
-            className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-rose-500 hover:h-2 transition-all"
+            className="w-full h-1 bg-[#232b25] rounded-lg appearance-none cursor-pointer accent-[#d8ef82] hover:h-1.5 transition-all"
           />
-          <span className="text-xs font-mono text-gray-400">{formatTime(duration)}</span>
+          <span className="text-[11px] font-mono text-[#9da98d]">{formatTime(duration)}</span>
         </div>
 
         {/* Buttons Bar */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={handleTogglePlay}
-              className="p-2 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white transition-all transform hover:scale-105"
+              className="p-1.5 rounded-lg bg-[#d8ef82]/15 text-[#d8ef82] hover:bg-[#d8ef82] hover:text-[#090e0b] transition-all"
             >
-              {isPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+              {isPlaying ? <Pause size={16} /> : <Play size={16} fill="currentColor" />}
             </button>
 
             <button
               onClick={onSkip}
               title="Chuyển bài tiếp theo"
-              className="p-2 rounded-xl bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+              className="p-1.5 rounded-lg bg-white/5 text-[#cad6bb] hover:bg-white/10 hover:text-white transition-all"
             >
-              <SkipForward size={18} />
+              <SkipForward size={16} />
             </button>
 
             {/* Volume */}
-            <div className="flex items-center gap-2 group/vol">
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={handleToggleMute}
-                className="p-2 text-gray-300 hover:text-white transition-colors"
+                className="p-1 text-[#9da98d] hover:text-white transition-colors"
               >
-                {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
               <input
                 type="range"
@@ -331,23 +376,23 @@ export default function YouTubePlayer({
                 max={100}
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-16 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                className="w-14 sm:w-20 h-1 bg-[#232b25] rounded-lg appearance-none cursor-pointer accent-[#d8ef82]"
               />
             </div>
           </div>
 
           {/* Video Title Display */}
-          <div className="hidden sm:flex items-center gap-2 max-w-sm truncate text-xs text-gray-300">
-            <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-semibold text-[10px] uppercase tracking-wider">
+          <div className="hidden sm:flex items-center gap-2 max-w-xs md:max-w-md truncate text-xs text-[#cad6bb]">
+            <span className="px-2 py-0.5 rounded-md bg-[#d8ef82]/15 text-[#d8ef82] font-semibold text-[10px] uppercase tracking-wider">
               Đang chiếu
             </span>
             <span className="truncate font-medium">{video?.title || 'Chưa chọn bài'}</span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg flex items-center gap-1.5 border border-white/5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Đồng bộ Realtime
+            <span className="text-[10px] text-[#9da98d] bg-white/[0.03] px-2 py-1 rounded-md border border-[#d6e5c6]/10 flex items-center gap-1.5 font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#d8ef82] animate-pulse" />
+              ĐỒNG BỘ TRỰC TIẾP
             </span>
           </div>
         </div>

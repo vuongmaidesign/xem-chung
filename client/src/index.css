@@ -2,35 +2,116 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Hiệu ứng màn hình cong và chiếu sáng rạp phim */
-.cinema-screen-glow {
-  box-shadow: 0 10px 40px rgba(244, 63, 94, 0.2), 0 0 100px rgba(99, 102, 241, 0.15);
+:root {
+  --bg-deep: #090e0b;
+  --bg-surface: #111412;
+  --bg-card: #151a17;
+  --border-subtle: rgba(214, 229, 198, 0.15);
+  --border-active: rgba(216, 239, 130, 0.4);
+  --accent-olive: #d8ef82;
+  --accent-light: #e1f8b1;
+  --text-dim: #9da98d;
+  --text-main: #cad6bb;
 }
 
-.cinema-curved-bar {
-  border-radius: 50% 50% 0 0 / 12px 12px 0 0;
+body {
+  background-color: var(--bg-deep);
+  color: var(--text-main);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
 }
 
-/* Tùy chỉnh thanh cuộn đẹp mắt */
+/* Màn hình chiếu cong vòm đặc trưng của wetube ciné */
+.seatmap-screen {
+  color: #a2b18c;
+  letter-spacing: 2.5px;
+  background: linear-gradient(rgba(216, 239, 130, 0.08), transparent);
+  border-top: 3px solid #c9d9b2;
+  border-radius: 50% 50% 0 0 / 14px 14px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  box-shadow: 0 10px 30px rgba(216, 239, 130, 0.05);
+}
+
+/* Khung rạp chiếu phim ảo */
+.theater-viewport {
+  background: #111412;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.theater-viewport::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.5);
+}
+
+/* Card ghế của tôi */
+.my-seat-card {
+  background: rgba(216, 239, 130, 0.05);
+  border: 1px solid rgba(216, 239, 130, 0.2);
+  border-radius: 12px;
+}
+
+/* Drawer trượt bên phải */
+.room-drawer {
+  background: rgba(19, 28, 22, 0.94);
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(214, 229, 198, 0.18);
+  border-radius: 20px;
+}
+
+/* Thanh dock điều khiển dưới đáy */
+.room-dock {
+  background: rgba(19, 28, 22, 0.92);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(214, 229, 198, 0.2);
+  border-radius: 22px;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
+}
+
+.room-dock-btn {
+  color: #cad6bb;
+  transition: all 0.2s ease;
+}
+
+.room-dock-btn:hover, .room-dock-btn.active {
+  color: #e1f8b1;
+  background: rgba(204, 233, 145, 0.12);
+}
+
+/* Tùy chỉnh scrollbar thanh lịch */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(15, 20, 17, 0.4);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.4);
+  background: rgba(214, 229, 198, 0.25);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(244, 63, 94, 0.6);
+  background: rgba(216, 239, 130, 0.5);
 }
 
-/* Animation cho bubble chat trên đầu ghế */
+/* Bong bóng chat nổi trên đầu ghế */
 @keyframes seatBubble {
   0% {
     opacity: 0;
@@ -52,4 +133,19 @@
 
 .animate-seat-bubble {
   animation: seatBubble 4.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes floatUpEmoji {
+  0% {
+    transform: translateY(0) scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-160px) scale(1.4);
+    opacity: 0;
+  }
+}
+
+.animate-float-emoji {
+  animation: floatUpEmoji 3s ease-out forwards;
 }

@@ -12,6 +12,10 @@ import {
   Check,
   Radio,
   Tv,
+  Maximize2,
+  MessageSquare,
+  Armchair,
+  RotateCcw,
 } from 'lucide-react';
 
 import YouTubePlayer from './components/YouTubePlayer';
@@ -20,17 +24,17 @@ import ChatBox from './components/ChatBox';
 import QueueModal from './components/QueueModal';
 import ProfileModal from './components/ProfileModal';
 
-// Tự động nhận diện backend URL (nếu dev thì localhost:4000, nếu prod thì theo domain hoặc biến môi trường)
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (window.location.hostname === 'localhost' ? 'http://localhost:4000' : window.location.origin);
+const BACKEND_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  (window.location.hostname === 'localhost' ? 'http://localhost:4000' : window.location.origin);
 
 export default function App() {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // Lấy Room ID từ URL query (?room=abc) hoặc mặc định
   const getInitialRoomId = () => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('room') || 'cinema-main';
+    return params.get('room') || 'phong-01';
   };
 
   const [roomId, setRoomId] = useState(getInitialRoomId);
@@ -38,7 +42,7 @@ export default function App() {
 
   // Profile User
   const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem('cineparty_profile');
+    const saved = localStorage.getItem('wetube_profile');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -47,6 +51,9 @@ export default function App() {
     return null;
   });
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(!profile);
+
+  // Active Drawer Tab: null | 'chat' | 'queue' | 'seats' | 'profile'
+  const [activeDrawer, setActiveDrawer] = useState(null);
 
   // Room State
   const [roomState, setRoomState] = useState({
@@ -57,13 +64,13 @@ export default function App() {
     queue: [],
     chat: [],
     skipVotesCount: 0,
+    requiredVotes: 1,
+    totalUsers: 1,
   });
 
-  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
-
-  // Bong bóng chat & Reaction
   const [recentBubbles, setRecentBubbles] = useState({});
   const [activeReactions, setActiveReactions] = useState([]);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   // Socket connection
   useEffect(() => {
@@ -87,7 +94,6 @@ export default function App() {
       setIsConnected(false);
     });
 
-    // Nhận toàn bộ state phòng khi mới vào
     s.on('room-state', (state) => {
       if (state) {
         setRoomState({
@@ -98,17 +104,18 @@ export default function App() {
           queue: state.queue || [],
           chat: state.chat || [],
           skipVotesCount: state.skipVotesCount || 0,
+          requiredVotes: state.requiredVotes || 1,
+          totalUsers: state.totalUsers || 1,
         });
       }
     });
 
-    // Cập nhật sơ đồ ghế
     s.on('seats-updated', ({ seats, users }) => {
       setRoomState((prev) => ({ ...prev, seats, users }));
     });
 
-    // Đồng bộ video thay đổi
-    s.on('video-changed', ({ video, playback }) => {
+    // Khi đổi bài hoặc lặp lại bài cũ
+    s.on('video-changed', ({ video, playback, isLoop }) => {
       setRoomState((prev) => ({
         ...prev,
         currentVideo: video,
@@ -116,17 +123,19 @@ export default function App() {
         skipVotesCount: 0,
       }));
 
-      // Bắn pháo hoa nhẹ khi bài mới được phát
-      try {
-        confetti({
-          particleCount: 30,
-          spread: 60,
-          origin: { y: 0.8 },
-        });
-      } catch (e) {}
+      // Bắn pháo hoa nhẹ khi bài mới được chọn
+      if (!isLoop) {
+        try {
+          confetti({
+            particleCount: 35,
+            spread: 55,
+            origin: { y: 0.7 },
+            colors: ['#d8ef82', '#e1f8b1', '#f8d484'],
+          });
+        } catch (e) {}
+      }
     });
 
-    // Đồng bộ play/pause/seek
     s.on('sync-playback', ({ action, time, isPlaying }) => {
       setRoomState((prev) => ({
         ...prev,
@@ -137,7 +146,6 @@ export default function App() {
       }));
     });
 
-    // Heartbeat định kỳ chuẩn hoá thời gian
     s.on('heartbeat-sync', ({ time, isPlaying }) => {
       setRoomState((prev) => ({
         ...prev,
@@ -148,19 +156,25 @@ export default function App() {
       }));
     });
 
-    // Cập nhật hàng đợi
     s.on('queue-updated', (queue) => {
       setRoomState((prev) => ({ ...prev, queue }));
     });
 
-    // Nhận tin nhắn chat mới
+    s.on('vote-skip-updated', ({ current, required, totalUsers }) => {
+      setRoomState((prev) => ({
+        ...prev,
+        skipVotesCount: current,
+        requiredVotes: required,
+        totalUsers,
+      }));
+    });
+
     s.on('new-message', (message) => {
       setRoomState((prev) => ({
         ...prev,
         chat: [...prev.chat, message],
       }));
 
-      // Nếu user đang ngồi một chiếc ghế, hiển thị bubble trên đầu ghế đó
       if (message.seatId) {
         setRecentBubbles((prev) => ({
           ...prev,
@@ -177,9 +191,8 @@ export default function App() {
       }
     });
 
-    // Nhận Reaction mới
     s.on('new-reaction', (reaction) => {
-      const rx = Math.floor(Math.random() * 60) + 20; // 20% to 80%
+      const rx = Math.floor(Math.random() * 60) + 20;
       const ry = Math.floor(Math.random() * 20) + 10;
 
       const newReaction = {
@@ -195,13 +208,7 @@ export default function App() {
       }, 3000);
     });
 
-    // Cập nhật vote skip
-    s.on('vote-skip-updated', ({ current }) => {
-      setRoomState((prev) => ({ ...prev, skipVotesCount: current }));
-    });
-
-    // Người khác rời phòng
-    s.on('user-left', ({ nickname, totalUsers, seats, users }) => {
+    s.on('user-left', ({ seats, users }) => {
       setRoomState((prev) => ({ ...prev, seats, users }));
     });
 
@@ -212,10 +219,9 @@ export default function App() {
     };
   }, [roomId]);
 
-  // Lưu thông tin người dùng
   const handleSaveProfile = (newProfile) => {
     setProfile(newProfile);
-    localStorage.setItem('cineparty_profile', JSON.stringify(newProfile));
+    localStorage.setItem('wetube_profile', JSON.stringify(newProfile));
     setIsProfileModalOpen(false);
 
     if (socket && socket.connected) {
@@ -228,7 +234,6 @@ export default function App() {
     }
   };
 
-  // Chọn ghế
   const handleSelectSeat = (seatId) => {
     if (!profile) {
       setIsProfileModalOpen(true);
@@ -239,70 +244,61 @@ export default function App() {
     }
   };
 
-  // Rời ghế
   const handleLeaveSeat = () => {
     if (socket) {
       socket.emit('leave-seat');
     }
   };
 
-  // Điều khiển Sync
   const handleSyncAction = (action, time) => {
     if (socket) {
       socket.emit('sync-action', { action, time });
     }
   };
 
-  // Hết bài
+  // KHI VIDEO KẾT THÚC: Báo cho server để chuyển bài hoặc lặp lại FULL bài từ đầu
   const handleVideoEnded = () => {
     if (socket) {
-      socket.emit('skip-video');
+      socket.emit('video-ended');
     }
   };
 
-  // Thêm Video
   const handleAddVideo = (url, playNow = false) => {
     if (socket) {
       socket.emit('add-video', { url, playNow });
     }
   };
 
-  // Xóa khỏi hàng đợi
   const handleRemoveFromQueue = (index) => {
     if (socket) {
       socket.emit('remove-from-queue', { index });
     }
   };
 
-  // Chuyển bài (Skip)
   const handleSkip = () => {
     if (socket) {
       socket.emit('skip-video');
     }
   };
 
-  // Bỏ phiếu Skip
   const handleVoteSkip = () => {
     if (socket) {
       socket.emit('vote-skip');
     }
   };
 
-  // Gửi Chat
   const handleSendMessage = (text) => {
     if (socket) {
       socket.emit('send-message', { text });
     }
   };
 
-  // Gửi Reaction
   const handleSendReaction = (emoji) => {
     if (socket) {
       socket.emit('send-reaction', { emoji });
     }
   };
 
-  // Copy link mời bạn bè
   const handleCopyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
@@ -310,127 +306,179 @@ export default function App() {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  const mySeat = roomState.seats.find((s) => s.occupiedBy === socket?.id);
+
   return (
-    <div className="min-h-screen bg-[#0b0c10] text-gray-100 flex flex-col">
-      {/* Top Header Bar */}
-      <header className="sticky top-0 z-40 bg-[#0e1017]/90 backdrop-blur-md border-b border-white/10 px-4 sm:px-8 py-3.5 flex items-center justify-between">
+    <div className="min-h-screen bg-[#090e0b] text-[#cad6bb] flex flex-col justify-between selection:bg-[#d8ef82] selection:text-[#090e0b]">
+      {/* Top HUD Header chuẩn wetube ciné */}
+      <header className="sticky top-0 z-40 bg-[#090e0b]/90 backdrop-blur-md border-b border-[#d6e5c6]/10 px-4 sm:px-8 py-3 flex items-center justify-between">
+        {/* Brand Logo & Room Info */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-600/30">
-            <Film size={22} className="text-white" />
+          <div className="w-8 h-8 rounded-lg bg-[#d8ef82]/15 border border-[#d8ef82]/30 flex items-center justify-center text-[#d8ef82]">
+            <Film size={18} />
           </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-extrabold tracking-tight bg-gradient-to-r from-white via-rose-100 to-rose-400 bg-clip-text text-transparent">
-              CinéParty
-            </h1>
-            <p className="text-[11px] text-gray-400 flex items-center gap-1.5 font-medium">
-              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-              Phòng: <span className="text-rose-400 font-mono font-bold">{roomId}</span>
-            </p>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-extrabold tracking-tight text-white lowercase">
+                wetube <span className="text-[#d8ef82]">ciné</span>
+              </span>
+              <span className="text-[10px] uppercase font-mono font-bold bg-[#d8ef82]/15 text-[#d8ef82] px-1.5 py-0.2 rounded border border-[#d8ef82]/20">
+                {roomId}
+              </span>
+            </div>
+            <span className="text-[10px] text-[#9da98d] font-mono tracking-wider">
+              100 CHỖ · CÙNG MỘT MÀN HÌNH · EST. 2026
+            </span>
           </div>
         </div>
 
-        {/* Action Controls */}
+        {/* Right HUD: Online Count, Share, Fullscreen */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Copy Link Share */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-[#d6e5c6]/10 text-xs text-[#cad6bb]">
+            <span className="w-2 h-2 rounded-full bg-[#d8ef82] animate-pulse" />
+            <Users size={13} className="text-[#d8ef82]" />
+            <span className="font-mono">{roomState.users.length || 1} khán giả</span>
+          </div>
+
           <button
             onClick={handleCopyLink}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-200 transition-all active:scale-95"
-            title="Mời bạn bè vào phòng"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-[#d6e5c6]/15 text-xs text-[#cad6bb] transition-all"
+            title="Mời bạn bè vào rạp"
           >
-            {copiedLink ? (
-              <>
-                <Check size={14} className="text-emerald-400" />
-                <span className="text-emerald-400">Đã copy link!</span>
-              </>
-            ) : (
-              <>
-                <Share2 size={14} />
-                <span className="hidden sm:inline">Mời bạn</span>
-              </>
-            )}
+            {copiedLink ? <Check size={13} className="text-[#d8ef82]" /> : <Share2 size={13} />}
+            <span className="hidden sm:inline">{copiedLink ? 'Đã copy link' : 'Mời bạn'}</span>
           </button>
 
-          {/* Queue Button */}
           <button
-            onClick={() => setIsQueueModalOpen(true)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-xs font-semibold text-rose-300 transition-all active:scale-95"
+            onClick={toggleFullscreen}
+            className="p-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-[#d6e5c6]/15 text-[#cad6bb] transition-all"
+            title="Toàn màn hình"
           >
-            <ListMusic size={15} />
-            <span className="hidden sm:inline">Hàng đợi</span>
+            <Maximize2 size={14} />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Cinema Area */}
+      <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 flex flex-col gap-6">
+        {/* Màn hình rạp chiếu */}
+        <YouTubePlayer
+          video={roomState.currentVideo}
+          playback={roomState.playback}
+          onSyncAction={handleSyncAction}
+          onVideoEnded={handleVideoEnded}
+          onSkip={handleSkip}
+          canControl={true}
+        />
+
+        {/* Sơ đồ 100 ghế ngồi */}
+        <CinemaSeats
+          seats={roomState.seats}
+          users={roomState.users}
+          currentUserId={socket?.id}
+          onSelectSeat={handleSelectSeat}
+          onLeaveSeat={handleLeaveSeat}
+          recentBubbles={recentBubbles}
+          activeReactions={activeReactions}
+        />
+      </main>
+
+      {/* Bottom Floating Room Dock chuẩn choigivui.com */}
+      <div className="sticky bottom-4 z-40 max-w-md mx-auto w-[92%] sm:w-auto px-4 pb-2">
+        <div className="room-dock flex items-center justify-between sm:justify-center gap-2 sm:gap-4 px-4 py-2">
+          {/* Nút Hàng chờ */}
+          <button
+            onClick={() => setActiveDrawer(activeDrawer === 'queue' ? null : 'queue')}
+            className={`room-dock-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${
+              activeDrawer === 'queue' ? 'active text-[#d8ef82]' : ''
+            }`}
+          >
+            <ListMusic size={16} />
+            <span>Hàng chờ</span>
             {roomState.queue.length > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-mono">
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-[#d8ef82] text-[#090e0b] text-[10px] font-mono font-bold">
                 {roomState.queue.length}
               </span>
             )}
           </button>
 
-          {/* Profile Button */}
+          {/* Nút Trò chuyện */}
+          <button
+            onClick={() => setActiveDrawer(activeDrawer === 'chat' ? null : 'chat')}
+            className={`room-dock-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${
+              activeDrawer === 'chat' ? 'active text-[#d8ef82]' : ''
+            }`}
+          >
+            <MessageSquare size={16} />
+            <span>Trò chuyện</span>
+          </button>
+
+          {/* Nút Cá tính (Profile) */}
           <button
             onClick={() => setIsProfileModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-200 transition-all"
+            className="room-dock-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
           >
             <span className="text-sm">{profile?.avatar || '🍿'}</span>
-            <span className="font-semibold hidden sm:inline max-w-[80px] truncate">
-              {profile?.nickname || 'Khách'}
-            </span>
+            <span className="max-w-[70px] truncate">{profile?.nickname || 'Cá tính'}</span>
+          </button>
+
+          {/* Nút Vote Skip nhanh */}
+          <button
+            onClick={handleVoteSkip}
+            className="room-dock-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[#d8ef82]"
+            title="Bình chọn bỏ qua video"
+          >
+            <RotateCcw size={14} />
+            <span className="hidden sm:inline">Vote Skip</span>
+            <b className="font-mono text-[11px] bg-[#d8ef82]/15 px-1.5 py-0.2 rounded">
+              {roomState.skipVotesCount}/{roomState.requiredVotes}
+            </b>
           </button>
         </div>
-      </header>
+      </div>
 
-      {/* Main Content Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Rạp Chiếu & Sơ đồ Ghế Ngồi (2 Columns on Desktop) */}
-        <div className="lg:col-span-2 flex flex-col space-y-4">
-          {/* Màn hình chiếu YouTube */}
-          <YouTubePlayer
-            video={roomState.currentVideo}
-            playback={roomState.playback}
-            onSyncAction={handleSyncAction}
-            onVideoEnded={handleVideoEnded}
-            onSkip={handleSkip}
-            canControl={true}
-          />
-
-          {/* Sơ đồ Ghế ngồi rạp phim */}
-          <CinemaSeats
-            seats={roomState.seats}
-            users={roomState.users}
-            currentUserId={socket?.id}
-            onSelectSeat={handleSelectSeat}
-            onLeaveSeat={handleLeaveSeat}
-            recentBubbles={recentBubbles}
-            activeReactions={activeReactions}
-          />
-        </div>
-
-        {/* Right Column: Chat Box & Live Reactions */}
-        <div className="lg:col-span-1 flex flex-col">
+      {/* Side Drawer cho Chat & Queue */}
+      {activeDrawer === 'chat' && (
+        <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-96 p-3 animate-pop-in">
           <ChatBox
             messages={roomState.chat}
             onSendMessage={handleSendMessage}
             onSendReaction={handleSendReaction}
             currentUserId={socket?.id}
+            onClose={() => setActiveDrawer(null)}
           />
         </div>
-      </main>
+      )}
 
-      {/* Modals */}
+      {/* Queue Modal */}
       <QueueModal
-        isOpen={isQueueModalOpen}
-        onClose={() => setIsQueueModalOpen(false)}
+        isOpen={activeDrawer === 'queue'}
+        onClose={() => setActiveDrawer(null)}
         queue={roomState.queue}
         currentVideo={roomState.currentVideo}
         onAddVideo={handleAddVideo}
         onRemoveFromQueue={handleRemoveFromQueue}
         onVoteSkip={handleVoteSkip}
         skipVotesCount={roomState.skipVotesCount}
+        requiredVotes={roomState.requiredVotes}
         totalUsers={roomState.users.length}
+        hasVoted={false}
       />
 
+      {/* Profile Modal */}
       <ProfileModal
         isOpen={isProfileModalOpen}
         initialProfile={profile}
         onSave={handleSaveProfile}
+        onClose={() => setIsProfileModalOpen(false)}
       />
     </div>
   );

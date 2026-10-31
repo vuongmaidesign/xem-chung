@@ -1,26 +1,26 @@
 import React, { useState } from 'react';
-import { User, Sparkles, Check } from 'lucide-react';
+import { Sparkles, Check, X } from 'lucide-react';
 
 const AVATARS = ['🍿', '🐱', '🦊', '🎧', '⚡', '🚀', '🐼', '🎮', '🕶️', '🍦', '🎸', '☕', '🐸', '🦄'];
 const COLORS = [
-  '#f43f5e', // rose
-  '#ec4899', // pink
-  '#a855f7', // purple
-  '#6366f1', // indigo
-  '#3b82f6', // blue
-  '#06b6d4', // cyan
-  '#10b981', // emerald
-  '#f59e0b', // amber
+  '#d8ef82', // Olive neon chuẩn choigivui
+  '#f8d484', // Vàng ấm
+  '#f49ac2', // Hồng pastel
+  '#a99dff', // Tím mộng mơ
+  '#85d6e0', // Cyan ngọc
+  '#ff6b6b', // Đỏ cam
+  '#51cf66', // Xanh lá
 ];
 
 export default function ProfileModal({
   isOpen,
   initialProfile,
   onSave,
+  onClose,
 }) {
   const [nickname, setNickname] = useState(initialProfile?.nickname || '');
   const [avatar, setAvatar] = useState(initialProfile?.avatar || '🍿');
-  const [color, setColor] = useState(initialProfile?.color || '#f43f5e');
+  const [color, setColor] = useState(initialProfile?.color || '#d8ef82');
 
   if (!isOpen) return null;
 
@@ -35,20 +35,36 @@ export default function ProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-pop-in">
-      <div className="relative w-full max-w-sm bg-[#13151f] border border-white/10 rounded-3xl shadow-2xl p-6 flex flex-col gap-5">
-        <div className="text-center space-y-1">
-          <div className="inline-flex p-3 rounded-2xl bg-rose-500/10 text-rose-400 mb-1 border border-rose-500/20">
-            <Sparkles size={24} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-pop-in select-none">
+      <div className="room-drawer relative w-full max-w-sm p-6 flex flex-col gap-5 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-[#d8ef82]/15 text-[#d8ef82]">
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-white">
+                Cá tính hàng ghế
+              </h3>
+              <p className="text-[10px] text-[#9da98d]">Chọn áo và biểu tượng của bạn</p>
+            </div>
           </div>
-          <h3 className="text-lg font-bold text-white">Tham gia rạp chiếu phim</h3>
-          <p className="text-xs text-gray-400">Tạo tên & biểu tượng để anh em cùng nhận ra nhé!</p>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 text-[#9da98d] hover:text-white rounded hover:bg-white/10"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Nhập nickname */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-300">Biệt danh của bạn:</label>
+            <label className="text-[10px] font-bold tracking-wider uppercase text-[#a2b18c]">
+              Biệt danh hiển thị:
+            </label>
             <input
               type="text"
               required
@@ -56,22 +72,24 @@ export default function ProfileModal({
               onChange={(e) => setNickname(e.target.value)}
               placeholder="VD: Tuấn Chill, Minh Popcorn..."
               maxLength={16}
-              className="w-full bg-[#1b1e2c] border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-rose-500"
+              className="w-full bg-[#151a17] border border-[#d6e5c6]/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#d8ef82]"
             />
           </div>
 
           {/* Chọn Avatar */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-300">Chọn Avatar:</label>
-            <div className="grid grid-cols-7 gap-1.5 p-2 bg-[#171926] rounded-2xl border border-white/5">
+            <label className="text-[10px] font-bold tracking-wider uppercase text-[#a2b18c]">
+              Chọn Biểu tượng:
+            </label>
+            <div className="grid grid-cols-7 gap-1 p-2 bg-[#141815] rounded-xl border border-[#d6e5c6]/10">
               {AVATARS.map((item) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => setAvatar(item)}
-                  className={`text-xl p-1.5 rounded-xl transition-all ${
+                  className={`text-lg p-1.5 rounded-lg transition-all ${
                     avatar === item
-                      ? 'bg-rose-500/30 scale-110 shadow-sm border border-rose-500/50'
+                      ? 'bg-[#d8ef82]/25 scale-110 border border-[#d8ef82]'
                       : 'hover:bg-white/5'
                   }`}
                 >
@@ -83,8 +101,10 @@ export default function ProfileModal({
 
           {/* Chọn Màu ghế */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-300">Màu phát sáng của ghế:</label>
-            <div className="flex items-center justify-between p-2 bg-[#171926] rounded-2xl border border-white/5">
+            <label className="text-[10px] font-bold tracking-wider uppercase text-[#a2b18c]">
+              Màu phát sáng của ghế:
+            </label>
+            <div className="flex items-center justify-between p-2 bg-[#141815] rounded-xl border border-[#d6e5c6]/10">
               {COLORS.map((c) => (
                 <button
                   key={c}
@@ -95,19 +115,18 @@ export default function ProfileModal({
                     color === c ? 'scale-125 ring-2 ring-white shadow-lg' : 'opacity-70 hover:opacity-100'
                   }`}
                 >
-                  {color === c && <Check size={12} className="text-white drop-shadow" />}
+                  {color === c && <Check size={12} className="text-[#090e0b] stroke-[3]" />}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Nút lưu */}
           <button
             type="submit"
             disabled={!nickname.trim()}
-            className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg shadow-rose-600/30 transition-all disabled:opacity-50 transform active:scale-95"
+            className="w-full py-2.5 rounded-xl bg-[#d8ef82] hover:bg-[#e1f8b1] text-[#090e0b] font-bold text-xs uppercase tracking-wider shadow-md shadow-[#d8ef82]/20 transition-all disabled:opacity-40"
           >
-            Vào rạp thưởng thức ngay 🍿
+            Lưu & Vào Rạp Chiếu 🍿
           </button>
         </form>
       </div>
