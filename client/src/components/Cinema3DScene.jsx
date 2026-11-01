@@ -2,11 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
+// Danh sách tên khán giả xuất hiện trên lưng ghế
 const DEFAULT_NAMES = [
   'Truong son', 'MCK', 'Quang', 'Phu', 'habesocki',
   '12345', 'thich xac cuc', 'Hồng Sơn', 'Minh Vũ', 'Thu Thảo',
   'Đức Huy', 'Tuấn Anh', 'Bảo Ngọc', 'Hoàng Nam', 'Khánh Linh',
   'Phương Anh', 'Văn Hùng', 'Thanh Tùng', 'Kim Ngân', 'Thành Long',
+  'Anh Dũng', 'Hải Yến', 'Quỳnh Chi', 'Việt Hoàng', 'Thùy Dương'
 ];
 
 export default function Cinema3DScene({
@@ -16,7 +18,6 @@ export default function Cinema3DScene({
   isMuted = false,
   onSyncAction,
   onVideoEnded,
-  isStandingOnStage = false,
 }) {
   const containerRef = useRef(null);
   const playerRef = useRef(null);
@@ -28,24 +29,26 @@ export default function Cinema3DScene({
     const container = containerRef.current;
     if (!container) return;
 
-    // SCENES: Scene WebGL (chứa người, ghế, tường) & Scene CSS3D (chứa YouTube iframe)
+    // SCENES: Scene WebGL & Scene CSS3D
     const sceneGL = new THREE.Scene();
-    sceneGL.background = new THREE.Color(0x0a0c0e);
-    sceneGL.fog = new THREE.FogExp2(0x0a0c0e, 0.02);
+    sceneGL.background = new THREE.Color(0x121313);
+    sceneGL.fog = new THREE.FogExp2(0x111212, 0.0045);
 
     const sceneCSS = new THREE.Scene();
 
-    // CAMERA chung
+    // CAMERA CHÍNH XÁC 100% CỦA CHOIGIVUI.COM:
+    // fov: 48, aspect, near: 0.1, far: 150
+    // position: (8, 14.4, 29) nhìn về (0, 5, -3)
     const camera = new THREE.PerspectiveCamera(
-      46,
+      48,
       container.clientWidth / container.clientHeight,
       0.1,
-      100
+      150
     );
-    camera.position.set(0, 5.7, 8.6);
-    camera.lookAt(0, 1.4, -1.6);
+    camera.position.set(8, 14.4, 29);
+    camera.lookAt(0, 5, -3);
 
-    // 1. RENDERER CSS3D (Nằm ở layer dưới, hiển thị iframe YouTube 3D)
+    // 1. RENDERER CSS3D (Layer dưới)
     const rendererCSS = new CSS3DRenderer();
     rendererCSS.setSize(container.clientWidth, container.clientHeight);
     rendererCSS.domElement.style.position = 'absolute';
@@ -56,274 +59,231 @@ export default function Cinema3DScene({
     rendererCSS.domElement.style.zIndex = '1';
     container.appendChild(rendererCSS.domElement);
 
-    // 2. RENDERER WebGL (Nằm ở layer trên, nền trong suốt alpha: true, vẽ người & ghế đè lên màn hình)
-    const rendererGL = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // 2. RENDERER WebGL (Layer trên, alpha: true)
+    const rendererGL = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     rendererGL.setSize(container.clientWidth, container.clientHeight);
-    rendererGL.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    rendererGL.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    rendererGL.toneMapping = THREE.ACESFilmicToneMapping;
+    rendererGL.toneMappingExposure = 1.18;
     rendererGL.domElement.style.position = 'absolute';
     rendererGL.domElement.style.top = '0';
     rendererGL.domElement.style.left = '0';
     rendererGL.domElement.style.width = '100%';
     rendererGL.domElement.style.height = '100%';
     rendererGL.domElement.style.zIndex = '2';
-    rendererGL.domElement.style.pointerEvents = 'none'; // Sự kiện chuột click xuyên qua để bấm player nếu cần
+    rendererGL.domElement.style.pointerEvents = 'none';
     container.appendChild(rendererGL.domElement);
 
-    // Ánh sáng (Lights)
-    const ambientLight = new THREE.AmbientLight(0x38423c, 1.4);
+    // HỆ THỐNG ÁNH SÁNG CHÍNH XÁC CỦA CHOIGIVUI.COM
+    // Ambient Light
+    const ambientLight = new THREE.AmbientLight(0xd6dfcc, 2.65);
     sceneGL.add(ambientLight);
 
-    const screenLight = new THREE.PointLight(0xe2f8b5, 2.5, 18);
-    screenLight.position.set(0, 2.8, -2.5);
+    // PointLight rọi màn hình: (0, 8, -7)
+    const screenLight = new THREE.PointLight(0xb9d368, 150, 55, 1.5);
+    screenLight.position.set(0, 8, -7);
     sceneGL.add(screenLight);
 
-    const warmLightL = new THREE.PointLight(0xffdfa0, 1.8, 15);
-    warmLightL.position.set(-5.5, 4, 1.5);
-    sceneGL.add(warmLightL);
+    // PointLight trần: (0, 15, 9)
+    const ceilingLight = new THREE.PointLight(0xf3b3bc, 80, 40, 1.7);
+    ceilingLight.position.set(0, 15, 9);
+    sceneGL.add(ceilingLight);
 
-    const warmLightR = new THREE.PointLight(0xffdfa0, 1.8, 15);
-    warmLightR.position.set(5.5, 4, 1.5);
-    sceneGL.add(warmLightR);
+    // Đèn rọi 2 bên tường: (-10, 9, 1), (10, 9, 3), (0, 14, 9)
+    const wallLight1 = new THREE.PointLight(0xaa00aa, 45, 1.25);
+    wallLight1.position.set(-10, 9, 1);
+    sceneGL.add(wallLight1);
 
-    // Sàn rạp (Floor)
-    const floorGeo = new THREE.PlaneGeometry(32, 32);
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x121415,
-      roughness: 0.85,
-      metalness: 0.15,
-    });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.5;
-    sceneGL.add(floor);
+    const wallLight2 = new THREE.PointLight(0xc5a7ff, 45, 1.25);
+    wallLight2.position.set(10, 9, 3);
+    sceneGL.add(wallLight2);
 
-    // Tường trước (Front Wall) nằm phía sau màn hình
-    const wallFrontGeo = new THREE.PlaneGeometry(32, 16);
-    const wallFrontMat = new THREE.MeshStandardMaterial({ color: 0x131517, roughness: 0.9 });
-    const wallFront = new THREE.Mesh(wallFrontGeo, wallFrontMat);
-    wallFront.position.set(0, 6, -5.6);
-    sceneGL.add(wallFront);
+    const wallLight3 = new THREE.PointLight(0xffaa5d, 40, 1.25);
+    wallLight3.position.set(0, 14, 9);
+    sceneGL.add(wallLight3);
 
-    // Tường trái & Tường phải
-    const wallSideGeo = new THREE.PlaneGeometry(32, 16);
-    const wallSideMat = new THREE.MeshStandardMaterial({ color: 0x101213, roughness: 0.9 });
+    // Helper tạo vật liệu & hình khối nhanh
+    const materialCache = new Map();
+    const getMat = (color, roughness = 0.8, metalness = 0) => {
+      const key = `${color}_${roughness}_${metalness}`;
+      if (!materialCache.has(key)) {
+        materialCache.set(key, new THREE.MeshStandardMaterial({ color, roughness, metalness }));
+      }
+      return materialCache.get(key);
+    };
+    const getBasicMat = (color) => new THREE.MeshBasicMaterial({ color });
 
-    const wallLeft = new THREE.Mesh(wallSideGeo, wallSideMat);
-    wallLeft.rotation.y = Math.PI / 2;
-    wallLeft.position.set(-7.5, 6, 2);
-    sceneGL.add(wallLeft);
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const createBox = (parent, x, y, z, sx, sy, sz, mat) => {
+      const mesh = new THREE.Mesh(boxGeo, mat);
+      mesh.position.set(x, y, z);
+      mesh.scale.set(sx, sy, sz);
+      parent.add(mesh);
+      return mesh;
+    };
 
-    const wallRight = new THREE.Mesh(wallSideGeo, wallSideMat);
-    wallRight.rotation.y = -Math.PI / 2;
-    wallRight.position.set(7.5, 6, 2);
-    sceneGL.add(wallRight);
+    // 1. SÀN RẠP PHIM
+    createBox(sceneGL, 0, -0.35, 7.5, 30, 0.6, 34, getMat('#252321'));
 
-    // Đèn sọc LED 2 bên tường
-    const stripGeo = new THREE.BoxGeometry(0.08, 3.2, 0.08);
-    const stripMat = new THREE.MeshBasicMaterial({ color: 0xffdf88 });
-    const lampGeo = new THREE.CylinderGeometry(0.12, 0.16, 0.25, 16);
-    const lampMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
+    // 2. 10 HÀNG BẬC THANG DỐC CỦA RẠP CHIẾU
+    for (let e = 0; e < 10; e++) {
+      createBox(sceneGL, 0, e * 0.34 - 0.12, -1 + e * 2, 27, 0.24, 2, getMat(e % 2 ? '#31282a' : '#2c2527'));
+      // Các dải đèn LED nhỏ dọc bậc thang
+      for (const t of [-8.8, -4.7, 1.15, 6.75]) {
+        createBox(sceneGL, t, e * 0.34 + 0.025, -1 + e * 2, 0.045, 0.035, 1.65, getBasicMat('#c28c58'));
+      }
+    }
+    createBox(sceneGL, 0, 2.94, 19.45, 27, 0.24, 2.9, getMat('#2c2527'));
 
-    [-6.5, -4.5, -2.5, -0.5, 1.5, 3.5].forEach((z) => {
-      const stripL = new THREE.Mesh(stripGeo, stripMat);
-      stripL.position.set(-7.4, 2.8, z);
-      stripL.rotation.z = 0.08;
-      sceneGL.add(stripL);
+    // 3. BỤC SÂN KHẤU (STAGE)
+    createBox(sceneGL, 0, 0.1, -7, 29, 0.4, 6, getMat('#282727'));
+    createBox(sceneGL, 0, 0.34, -6, 25, 0.05, 0.06, getBasicMat('#b0804f'));
 
-      const lampL = new THREE.Mesh(lampGeo, lampMat);
-      lampL.position.set(-7.35, 4.4, z);
-      sceneGL.add(lampL);
+    // 4. TƯỜNG SAU (FRONT WALL)
+    createBox(sceneGL, 0, 8.5, -12, 30, 18, 0.5, getMat('#191b1b'));
 
-      const stripR = new THREE.Mesh(stripGeo, stripMat);
-      stripR.position.set(7.4, 2.8, z);
-      stripR.rotation.z = -0.08;
-      sceneGL.add(stripR);
+    // 5. HAI BỨC TƯỜNG BÊN TRÁI VÀ PHẢI VỚI ĐÈN RỌI VÀ SỌC LED
+    for (const e of [-15, 15]) {
+      createBox(sceneGL, e, 8, 5, 0.35, 18, 35, getMat('#212324'));
+      // Các cột đèn sọc LED màu vàng ấm
+      for (let t = -8; t < 24; t += 3.5) {
+        createBox(sceneGL, e < 0 ? e + 0.21 : e - 0.21, 7.5, t, 0.12, 10, 2.5, getMat('#2b2d2c'));
+        createBox(sceneGL, e < 0 ? e + 0.3 : e - 0.3, 8, t + 1.6, 0.06, 9, 0.04, getBasicMat('#a97a51'));
 
-      const lampR = new THREE.Mesh(lampGeo, lampMat);
-      lampR.position.set(7.35, 4.4, z);
-      sceneGL.add(lampR);
-    });
+        // Đèn rọi Spot (Cone đèn rọi hắt xuống sàn)
+        const spotLight = new THREE.SpotLight(0xffdf88, 1.2, 16, Math.PI / 6, 0.5);
+        spotLight.position.set(e < 0 ? e + 0.8 : e - 0.8, 12, t + 1.6);
+        spotLight.target.position.set(e < 0 ? e + 4 : e - 4, 0, t + 1.6);
+        sceneGL.add(spotLight);
+        sceneGL.add(spotLight.target);
+      }
+    }
 
-    // Quả cầu disco trên trần
-    const discoGeo = new THREE.SphereGeometry(0.35, 16, 16);
-    const discoMat = new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
-      metalness: 0.95,
-      roughness: 0.1,
-    });
-    const discoBall = new THREE.Mesh(discoGeo, discoMat);
-    discoBall.position.set(0, 5.2, -1.8);
-    sceneGL.add(discoBall);
-
-    // Loa cây đứng 2 bên màn hình
-    const speakerGeo = new THREE.BoxGeometry(0.85, 3.4, 0.85);
-    const speakerMat = new THREE.MeshStandardMaterial({ color: 0x181a1c, roughness: 0.7 });
-    const coneGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.05, 16);
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
-
-    [-4.7, 4.7].forEach((x) => {
-      const spk = new THREE.Mesh(speakerGeo, speakerMat);
-      spk.position.set(x, 1.7, -4.8);
-      sceneGL.add(spk);
-
-      [0.85, 1.7, 2.55].forEach((y) => {
-        const cone = new THREE.Mesh(coneGeo, coneMat);
+    // 6. HAI DÀN LOA CÂY THÙNG ĐỨNG 2 BÊN MÀN HÌNH (SOUND TOWERS)
+    const speakerCylinderGeo = new THREE.CylinderGeometry(0.61, 0.61, 0.09, 32);
+    for (const e of [-1, 1]) {
+      const t = e * 12.7;
+      createBox(sceneGL, t, 4.3, -9, 2, 7.8, 1.5, getMat('#101212', 0.8, 0.2));
+      for (const y of [1.65, 3.75, 5.85]) {
+        const cone = new THREE.Mesh(speakerCylinderGeo, getMat('#434644', 0.6, 0.5));
         cone.rotation.x = Math.PI / 2;
-        cone.position.set(x, y, -4.37);
+        cone.position.set(t, y, -8.21);
         sceneGL.add(cone);
-      });
-    });
+      }
+    }
+
+    // 7. KHUNG MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC CỦA CHOIGIVUI.COM
+    // Kích thước: Rộng 21.2, Cao 11.95, Tọa độ: (0, 7.9, -10.44)
+    createBox(sceneGL, 0, 7.9, -10.8, 22.2, 12.7, 0.4, getMat('#080909'));
+    createBox(sceneGL, 0, 7.9, -10.55, 21.7, 12.2, 0.06, getBasicMat('#6b725d'));
+    createBox(sceneGL, 0, 7.9, -10.49, 21.25, 11.95, 0.03, getBasicMat('#171d1c'));
+
+    // Bảng chữ nổi W E T U B E   C I N É
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 512;
+    labelCanvas.height = 128;
+    const lctx = labelCanvas.getContext('2d');
+    lctx.fillStyle = '#252726';
+    lctx.fillRect(0, 0, 512, 128);
+    lctx.fillStyle = '#d6e4c2';
+    lctx.font = '700 48px Arial';
+    lctx.textAlign = 'center';
+    lctx.textBaseline = 'middle';
+    lctx.fillText('W E T U B E   C I N É', 256, 64);
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.65), new THREE.MeshBasicMaterial({ map: labelTex }));
+    labelMesh.position.set(0, 1.05, -9.9);
+    sceneGL.add(labelMesh);
 
     // =================================================================
-    // MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT) NẰM TRÊN TƯỜNG SAU (z = -5.0)
+    // 8. MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT) VÀ DEPTH MASK
     // =================================================================
     const screenWidth = 1280;
     const screenHeight = 720;
-    const screenScale = 0.0062; // 1280 * 0.0062 = ~7.9 đơn vị Three.js
+    const screenScale = 21.2 / 1280; // Chính xác tỷ lệ của choigivui.com!
 
     const iframeDiv = document.createElement('div');
     iframeDiv.style.width = `${screenWidth}px`;
     iframeDiv.style.height = `${screenHeight}px`;
     iframeDiv.style.background = '#000';
-    iframeDiv.style.border = '14px solid #080808';
-    iframeDiv.style.boxSizing = 'border-box';
-    iframeDiv.innerHTML = '<div id="yt-3d-screen" style="width: 100%; height: 100%;"></div>';
+    iframeDiv.innerHTML = '<div id="yt-exact-screen" style="width: 100%; height: 100%;"></div>';
 
-    const cssScreenObject = new CSS3DObject(iframeDiv);
-    cssScreenObject.position.set(0, 2.55, -5.0);
-    cssScreenObject.scale.set(screenScale, screenScale, screenScale);
-    sceneCSS.add(cssScreenObject);
+    const cssScreen = new CSS3DObject(iframeDiv);
+    cssScreen.position.set(0, 7.9, -10.44);
+    cssScreen.scale.set(screenScale, screenScale, screenScale);
+    sceneCSS.add(cssScreen);
 
-    // KỸ THUẬT MASKING TRONG WEBL:
-    // Tạo 1 Mesh có kích thước bằng màn hình, colorWrite = false để ghi Depth Buffer.
-    // Nhờ đó, bất kỳ vật thể WebGL nào (người, ghế, bục) ở z > -5.0 SẼ ĐƯỢC VẼ ĐÈ LÊN MÀN HÌNH YOUTUBE!
-    const maskGeo = new THREE.PlaneGeometry(screenWidth * screenScale, screenHeight * screenScale);
-    const maskMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    maskMat.colorWrite = false; // Không vẽ màu (để lộ iframe CSS3D bên dưới)
-    const maskMesh = new THREE.Mesh(maskGeo, maskMat);
-    maskMesh.position.set(0, 2.55, -5.0);
+    // WebGL Depth Mask: Đặt tại (0, 7.9, -10.44), colorWrite = false
+    // Mọi người, bục sân khấu, ghế có z > -10.44 sẽ TỰ ĐỘNG CHE MÀN HÌNH YOUTUBE!
+    const maskMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(21.2, 11.95),
+      new THREE.MeshBasicMaterial({ color: 0x000000 })
+    );
+    maskMesh.material.colorWrite = false;
+    maskMesh.position.set(0, 7.9, -10.44);
     sceneGL.add(maskMesh);
 
-    // Bảng chữ nổi WETUBE CINÉ ở chân màn hình
-    const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = 512;
-    labelCanvas.height = 64;
-    const lctx = labelCanvas.getContext('2d');
-    lctx.fillStyle = '#080808';
-    lctx.fillRect(0, 0, 512, 64);
-    lctx.fillStyle = '#8e9c80';
-    lctx.font = 'bold 24px monospace';
-    lctx.textAlign = 'center';
-    lctx.textBaseline = 'middle';
-    lctx.fillText('W E T U B E   C I N É', 256, 32);
-
-    const labelGeo = new THREE.PlaneGeometry(1.6, 0.2);
-    const labelMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(labelCanvas) });
-    const labelMesh = new THREE.Mesh(labelGeo, labelMat);
-    labelMesh.position.set(0, 0.2, -4.8);
-    sceneGL.add(labelMesh);
-
-    // Bục sân khấu (Stage) NẰM PHÍA TRƯỚC MÀN HÌNH (z = -4.2)
-    const stageGeo = new THREE.BoxGeometry(11.2, 0.38, 2.2);
-    const stageMat = new THREE.MeshStandardMaterial({ color: 0x1a1c1e, roughness: 0.8 });
-    const stage = new THREE.Mesh(stageGeo, stageMat);
-    stage.position.set(0, -0.31, -4.2);
-    sceneGL.add(stage);
-
-    // Đèn rọi chân bục sân khấu (Footlights)
-    const footlightGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.12, 12);
-    const footlightMat = new THREE.MeshBasicMaterial({ color: 0xffdf88 });
-    [-3.2, -2.0, -0.8, 0.8, 2.0, 3.2].forEach((x) => {
-      const fl = new THREE.Mesh(footlightGeo, footlightMat);
-      fl.position.set(x, -0.1, -3.1);
-      sceneGL.add(fl);
-    });
+    // 9. QUẢ CẦU DISCO TRÊN TRẦN
+    const discoMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 24), getMat('#ffffff', 0.1, 0.9));
+    discoMesh.position.set(0, 15.6, -0.5);
+    sceneGL.add(discoMesh);
+    createBox(sceneGL, 0, 17, -0.5, 0.045, 2.1, 0.045, getMat('#6e736f', 0.2, 0.9));
 
     // =================================================================
-    // 2 NHÂN VẬT ĐỨNG TRÊN SÂN KHẤU (z = -3.7) -> CHE TRƯỚC MÀN HÌNH YOUTUBE!
+    // 10. BA NHÂN VẬT ĐỨNG TRÊN SÂN KHẤU (STAGE PERFORMERS CHUẨN ẢNH 1)
     // =================================================================
-    const stageGroup = new THREE.Group();
-    sceneGL.add(stageGroup);
-
-    const createStagePerformer = (x, z, shirtColor, ringColor) => {
-      const group = new THREE.Group();
-      group.position.set(x, -0.12, z);
+    const createStageGuy = (x, z, shirtColor, ringColor) => {
+      const g = new THREE.Group();
+      g.position.set(x, 0.35, z);
 
       // Vòng tròn neon dưới chân
-      const ringGeo = new THREE.RingGeometry(0.24, 0.28, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.45, 0.52, 32),
+        new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide })
+      );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.01;
-      group.add(ring);
+      ring.position.y = 0.02;
+      g.add(ring);
 
-      // Thân người (Đứng)
-      const bodyGeo = new THREE.BoxGeometry(0.32, 0.46, 0.22);
-      const bodyMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.7 });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.58;
-      group.add(body);
+      // Thân
+      const body = new THREE.Mesh(boxGeo, getMat(shirtColor, 0.7));
+      body.position.set(0, 1.23, 0);
+      body.scale.set(0.68, 0.83, 0.48);
+      g.add(body);
 
-      // Quần
-      const legsGeo = new THREE.BoxGeometry(0.28, 0.38, 0.2);
-      const legsMat = new THREE.MeshStandardMaterial({ color: 0x222a28, roughness: 0.8 });
-      const legs = new THREE.Mesh(legsGeo, legsMat);
-      legs.position.y = 0.2;
-      group.add(legs);
+      // Đầu tròn & Tóc
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 16), getMat('#cba07d', 0.6));
+      head.position.set(0, 1.99, 0);
+      g.add(head);
 
-      // Đầu tròn
-      const headGeo = new THREE.SphereGeometry(0.19, 16, 16);
-      const headMat = new THREE.MeshStandardMaterial({ color: 0xffdfc4, roughness: 0.6 });
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.y = 0.95;
-      group.add(head);
-
-      // Tóc đen
-      const hairGeo = new THREE.SphereGeometry(0.2, 16, 16, 0, Math.PI * 2, 0, Math.PI / 1.7);
-      const hairMat = new THREE.MeshStandardMaterial({ color: 0x1f1916, roughness: 0.9 });
-      const hair = new THREE.Mesh(hairGeo, hairMat);
+      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.342, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#392d25', 0.9));
       hair.rotation.x = -Math.PI / 2;
-      hair.position.y = 0.97;
-      group.add(hair);
+      hair.position.set(0, 2.02, 0);
+      g.add(hair);
 
-      return group;
+      return g;
     };
 
-    const performer1 = createStagePerformer(-0.65, -3.7, 0x93c5fd, 0xf43f5e);
-    stageGroup.add(performer1);
-
-    const performer2 = createStagePerformer(0.65, -3.7, 0x86efac, 0xec4899);
-    stageGroup.add(performer2);
+    // 3 người trên sân khấu như ảnh 1:
+    const stageP1 = createStageGuy(-3.0, -6.5, '#93c5fd', '#f43f5e'); // Áo xanh da trời (vòng hồng)
+    const stageP2 = createStageGuy(0.0, -6.5, '#86efac', '#ec4899');  // Áo xanh cốm ở giữa (vòng tím hồng)
+    const stageP3 = createStageGuy(3.0, -6.5, '#fbcfe8', '#f43f5e');  // Áo hồng kem bên phải (vòng hồng)
+    sceneGL.add(stageP1);
+    sceneGL.add(stageP2);
+    sceneGL.add(stageP3);
 
     // =================================================================
-    // CÁC HÀNG GHẾ RẠP CHIẾU 3D & KHÁN GIẢ (z = -2.6 đến +3.5)
-    // TẤT CẢ NẰM PHÍA TRƯỚC CHE NỬA DƯỚI MÀN HÌNH YOUTUBE!
+    // 11. HÀNG GHẾ SOFA RẠP CHIẾU & KHÁN GIẢ (10 HÀNG CHUẨN CHOIGIVUI.COM)
     // =================================================================
-    const chairBackGeo = new THREE.BoxGeometry(0.38, 0.45, 0.08);
-    const chairSeatGeo = new THREE.BoxGeometry(0.38, 0.08, 0.35);
-    const chairMat = new THREE.MeshStandardMaterial({ color: 0x24282c, roughness: 0.8 });
-    const vipChairMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.5 });
+    const sofaColors = ['#93c5fd', '#fbcfe8', '#fef08a', '#a7f3d0', '#c4b5fd', '#fde047', '#d8ef82', '#fca5a5'];
 
-    const seatedBodyGeo = new THREE.BoxGeometry(0.3, 0.35, 0.24);
-    const seatedHeadGeo = new THREE.SphereGeometry(0.18, 16, 16);
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xffdfc4, roughness: 0.6 });
-    const hairGeo = new THREE.SphereGeometry(0.19, 16, 16, 0, Math.PI * 2, 0, Math.PI / 1.7);
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1f1916, roughness: 0.9 });
-
-    const shirtColors = [
-      0x93c5fd, 0xfbcfe8, 0xfef08a, 0xa7f3d0,
-      0xc4b5fd, 0xfde047, 0xd8ef82, 0xfca5a5,
-    ];
-
-    const rows = 7;
-    const cols = 10;
-
+    // Helper tạo Name Tag nhỏ gắn lưng ghế
     const createNameTagTexture = (name) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256;
-      canvas.height = 64;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#e2e8dc';
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 64;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#d2dacb';
       ctx.beginPath();
       ctx.roundRect(4, 4, 248, 56, 12);
       ctx.fill();
@@ -335,77 +295,71 @@ export default function Cinema3DScene({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(name.slice(0, 12), 128, 34);
-      return new THREE.CanvasTexture(canvas);
+      return new THREE.CanvasTexture(c);
     };
 
-    const tagGeo = new THREE.PlaneGeometry(0.32, 0.08);
+    // Tạo 10 hàng ghế
+    for (let r = 0; r < 10; r++) {
+      const z = -1 + r * 2.0;
+      const y = r * 0.34;
 
-    for (let r = 0; r < rows; r++) {
-      const z = -2.6 + r * 0.95;
-      const y = -0.3 + r * 0.38;
+      for (let c = 0; c < 12; c++) {
+        // Chia thành 2 dãy: Dãy trái 8 ghế, Dãy phải 4 ghế, ở giữa là lối đi
+        let x = (c - 5.5) * 1.45;
+        if (c >= 8) x += 1.2; // Lối đi có đèn
 
-      for (let c = 0; c < cols; c++) {
-        let x = (c - (cols - 1) / 2) * 0.52;
-        if (c >= 5) x += 0.35;
+        const isVip = (r === 0 && (c === 5 || c === 6));
 
-        const seatIndex = r * cols + c;
-        const isVip = (r === 0 && (c === 4 || c === 5));
+        // Ghế sofa rạp chiếu bo góc
+        const chairBack = createBox(sceneGL, x, y + 0.65, z, 1.1, 0.9, 0.35, getMat(isVip ? '#881337' : '#222629', 0.8));
+        const chairSeat = createBox(sceneGL, x, y + 0.25, z + 0.35, 1.1, 0.3, 0.8, getMat(isVip ? '#881337' : '#1c2022', 0.8));
 
-        const back = new THREE.Mesh(chairBackGeo, isVip ? vipChairMat : chairMat);
-        back.position.set(x, y + 0.3, z);
-        sceneGL.add(back);
-
-        const seat = new THREE.Mesh(chairSeatGeo, isVip ? vipChairMat : chairMat);
-        seat.position.set(x, y + 0.1, z + 0.14);
-        sceneGL.add(seat);
-
+        // Nếu là ghế VIP hoàng gia: Ngai vàng & Vương miện
         if (isVip) {
-          const crownGeo = new THREE.CylinderGeometry(0.16, 0.12, 0.14, 6);
-          const crownMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 });
-          const crown = new THREE.Mesh(crownGeo, crownMat);
-          crown.position.set(x, y + 0.92, z);
+          const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.3, 6), getMat('#facc15', 0.2, 0.8));
+          crown.position.set(x, y + 2.1, z);
           sceneGL.add(crown);
         }
 
-        const isOccupied = seatIndex % 2 === 0 || r === 0 || r === 1 || r === 2;
-        if (isOccupied) {
-          const color = shirtColors[seatIndex % shirtColors.length];
-          const shirtMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+        // Khán giả ngồi trên ghế
+        const seatIndex = r * 12 + c;
+        if (seatIndex % 2 === 0 || r < 3) {
+          const color = sofaColors[seatIndex % sofaColors.length];
 
-          const body = new THREE.Mesh(seatedBodyGeo, shirtMat);
-          body.position.set(x, y + 0.32, z + 0.12);
-          sceneGL.add(body);
+          // Thân người ngồi
+          createBox(sceneGL, x, y + 0.8, z + 0.25, 0.68, 0.75, 0.5, getMat(color, 0.7));
 
-          const head = new THREE.Mesh(seatedHeadGeo, headMat);
-          head.position.set(x, y + 0.62, z + 0.12);
+          // Đầu & Tóc
+          const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), getMat('#cba07d', 0.6));
+          head.position.set(x, y + 1.4, z + 0.25);
           sceneGL.add(head);
 
-          const hair = new THREE.Mesh(hairGeo, hairMat);
+          const hair = new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#2b221c', 0.9));
           hair.rotation.x = -Math.PI / 2;
-          hair.position.set(x, y + 0.64, z + 0.12);
+          hair.position.set(x, y + 1.44, z + 0.25);
           sceneGL.add(hair);
 
-          const personName = DEFAULT_NAMES[seatIndex % DEFAULT_NAMES.length];
-          const tagMat = new THREE.MeshBasicMaterial({
-            map: createNameTagTexture(personName),
-            transparent: true,
-          });
-          const tag = new THREE.Mesh(tagGeo, tagMat);
-          tag.position.set(x, y + 0.28, z + 0.05);
-          sceneGL.add(tag);
+          // Thẻ tên gắn sau lưng ghế
+          const name = DEFAULT_NAMES[seatIndex % DEFAULT_NAMES.length];
+          const tagMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.7, 0.18),
+            new THREE.MeshBasicMaterial({ map: createNameTagTexture(name), transparent: true })
+          );
+          tagMesh.position.set(x, y + 0.65, z + 0.19);
+          sceneGL.add(tagMesh);
         }
       }
     }
 
     // =================================================================
-    // KHỞI TẠO YOUTUBE PLAYER TRONG CSS3D
+    // KHỞI TẠO YOUTUBE PLAYER TRONG CSS3D SCREEN
     // =================================================================
     let checkInterval = setInterval(() => {
-      if (window.YT && window.YT.Player && document.getElementById('yt-3d-screen')) {
+      if (window.YT && window.YT.Player && document.getElementById('yt-exact-screen')) {
         clearInterval(checkInterval);
         checkInterval = null;
 
-        playerRef.current = new window.YT.Player('yt-3d-screen', {
+        playerRef.current = new window.YT.Player('yt-exact-screen', {
           height: '100%',
           width: '100%',
           videoId: video ? video.id : '5qap5aO4i9A',
@@ -441,7 +395,7 @@ export default function Cinema3DScene({
       }
     }, 300);
 
-    // ANIMATION RENDER LOOP (Đồng bộ cả CSS3D & WebGL)
+    // ANIMATION RENDER LOOP (Đồng bộ CSS3D & WebGL)
     let animationFrameId;
     const clock = new THREE.Clock();
 
@@ -449,10 +403,11 @@ export default function Cinema3DScene({
       animationFrameId = requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      discoBall.rotation.y += 0.005;
+      discoMesh.rotation.y += 0.005;
 
-      performer1.position.y = -0.12 + Math.sin(elapsed * 2) * 0.015;
-      performer2.position.y = -0.12 + Math.cos(elapsed * 2.2) * 0.015;
+      stageP1.position.y = 0.35 + Math.sin(elapsed * 2) * 0.02;
+      stageP2.position.y = 0.35 + Math.cos(elapsed * 2.2) * 0.02;
+      stageP3.position.y = 0.35 + Math.sin(elapsed * 1.8) * 0.02;
 
       rendererCSS.render(sceneCSS, camera);
       rendererGL.render(sceneGL, camera);
@@ -527,7 +482,7 @@ export default function Cinema3DScene({
   }, [volume, isMuted]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none">
+    <div className="relative w-full h-full overflow-hidden select-none bg-[#121313]">
       <div ref={containerRef} className="absolute inset-0 w-full h-full" />
     </div>
   );
