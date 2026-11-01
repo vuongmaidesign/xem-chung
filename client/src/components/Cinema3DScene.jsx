@@ -31,7 +31,8 @@ export default function Cinema3DScene({
 
     // SCENES: Scene WebGL & Scene CSS3D
     const sceneGL = new THREE.Scene();
-    sceneGL.background = new THREE.Color(0x121313);
+    // ĐỂ WEBGL HOÀN TOÀN TRONG SUỐT Ở KHU VỰC MÀN HÌNH ĐỂ THẤY YOUTUBE BÊN DƯỚI!
+    sceneGL.background = null;
     sceneGL.fog = new THREE.FogExp2(0x111212, 0.0045);
 
     const sceneCSS = new THREE.Scene();
@@ -48,7 +49,7 @@ export default function Cinema3DScene({
     camera.position.set(8, 14.4, 29);
     camera.lookAt(0, 5, -3);
 
-    // 1. RENDERER CSS3D (Layer dưới)
+    // 1. RENDERER CSS3D (Layer dưới chứa YouTube iframe 3D)
     const rendererCSS = new CSS3DRenderer();
     rendererCSS.setSize(container.clientWidth, container.clientHeight);
     rendererCSS.domElement.style.position = 'absolute';
@@ -57,12 +58,14 @@ export default function Cinema3DScene({
     rendererCSS.domElement.style.width = '100%';
     rendererCSS.domElement.style.height = '100%';
     rendererCSS.domElement.style.zIndex = '1';
+    rendererCSS.domElement.style.pointerEvents = 'auto';
     container.appendChild(rendererCSS.domElement);
 
-    // 2. RENDERER WebGL (Layer trên, alpha: true)
+    // 2. RENDERER WebGL (Layer trên, alpha: true, clearColor 0 alpha)
     const rendererGL = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     rendererGL.setSize(container.clientWidth, container.clientHeight);
     rendererGL.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    rendererGL.setClearColor(0x000000, 0); // Độ trong suốt 100%
     rendererGL.toneMapping = THREE.ACESFilmicToneMapping;
     rendererGL.toneMappingExposure = 1.18;
     rendererGL.domElement.style.position = 'absolute';
@@ -139,8 +142,11 @@ export default function Cinema3DScene({
     createBox(sceneGL, 0, 0.1, -7, 29, 0.4, 6, getMat('#282727'));
     createBox(sceneGL, 0, 0.34, -6, 25, 0.05, 0.06, getBasicMat('#b0804f'));
 
-    // 4. TƯỜNG SAU (FRONT WALL)
-    createBox(sceneGL, 0, 8.5, -12, 30, 18, 0.5, getMat('#191b1b'));
+    // 4. TƯỜNG SAU (FRONT WALL) - Để trống ô màn hình 21.25 x 11.95 để YouTube CSS3D hiển thị rõ nét!
+    createBox(sceneGL, 0, 15.9, -12, 30, 4.2, 0.5, getMat('#191b1b'));       // Phần tường trên
+    createBox(sceneGL, 0, 0.95, -12, 30, 2.1, 0.5, getMat('#191b1b'));       // Phần tường dưới chân sân khấu
+    createBox(sceneGL, -12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));   // Phần tường bên trái
+    createBox(sceneGL, 12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));    // Phần tường bên phải
 
     // 5. HAI BỨC TƯỜNG BÊN TRÁI VÀ PHẢI VỚI ĐÈN RỌI VÀ SỌC LED
     for (const e of [-15, 15]) {
@@ -172,11 +178,20 @@ export default function Cinema3DScene({
       }
     }
 
-    // 7. KHUNG MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC CỦA CHOIGIVUI.COM
-    // Kích thước: Rộng 21.2, Cao 11.95, Tọa độ: (0, 7.9, -10.44)
-    createBox(sceneGL, 0, 7.9, -10.8, 22.2, 12.7, 0.4, getMat('#080909'));
-    createBox(sceneGL, 0, 7.9, -10.55, 21.7, 12.2, 0.06, getBasicMat('#6b725d'));
-    createBox(sceneGL, 0, 7.9, -10.49, 21.25, 11.95, 0.03, getBasicMat('#171d1c'));
+    // 7. KHUNG VIỀN MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC CỦA CHOIGIVUI.COM
+    // Khung viền bao quanh (để rỗng ở giữa cho video YouTube phát xuyên qua)
+    // Kích thước mở: Rộng 21.25, Cao 11.95, Tọa độ tâm: (0, 7.9, -10.45)
+    // Viền trong màu xanh cốm matcha (#6b725d)
+    createBox(sceneGL, 0, 13.92, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d')); // Cạnh trên
+    createBox(sceneGL, 0, 1.88, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d'));  // Cạnh dưới
+    createBox(sceneGL, -10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d')); // Cạnh trái
+    createBox(sceneGL, 10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d'));  // Cạnh phải
+
+    // Viền ngoài màu đen đậm rạp chiếu (#0c0d0d)
+    createBox(sceneGL, 0, 14.17, -10.48, 22.2, 0.35, 0.16, getMat('#0c0d0d'));
+    createBox(sceneGL, 0, 1.63, -10.48, 22.2, 0.35, 0.16, getMat('#0c0d0d'));
+    createBox(sceneGL, -10.95, 7.9, -10.48, 0.35, 12.7, 0.16, getMat('#0c0d0d'));
+    createBox(sceneGL, 10.95, 7.9, -10.48, 0.35, 12.7, 0.16, getMat('#0c0d0d'));
 
     // Bảng chữ nổi W E T U B E   C I N É
     const labelCanvas = document.createElement('canvas');
@@ -196,32 +211,25 @@ export default function Cinema3DScene({
     sceneGL.add(labelMesh);
 
     // =================================================================
-    // 8. MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT) VÀ DEPTH MASK
+    // 8. MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT)
+    // Tích hợp 100% trong không gian 3D, nhân vật đứng sân khấu tự động che trước màn hình
     // =================================================================
     const screenWidth = 1280;
     const screenHeight = 720;
-    const screenScale = 21.2 / 1280; // Chính xác tỷ lệ của choigivui.com!
+    const screenScale = 21.25 / 1280; // Chuẩn tỷ lệ 16:9 khít với khung rạp!
 
     const iframeDiv = document.createElement('div');
     iframeDiv.style.width = `${screenWidth}px`;
     iframeDiv.style.height = `${screenHeight}px`;
-    iframeDiv.style.background = '#000';
+    iframeDiv.style.background = '#000000';
+    iframeDiv.style.overflow = 'hidden';
+    iframeDiv.style.pointerEvents = 'auto';
     iframeDiv.innerHTML = '<div id="yt-exact-screen" style="width: 100%; height: 100%;"></div>';
 
     const cssScreen = new CSS3DObject(iframeDiv);
-    cssScreen.position.set(0, 7.9, -10.44);
+    cssScreen.position.set(0, 7.9, -10.45);
     cssScreen.scale.set(screenScale, screenScale, screenScale);
     sceneCSS.add(cssScreen);
-
-    // WebGL Depth Mask: Đặt tại (0, 7.9, -10.44), colorWrite = false
-    // Mọi người, bục sân khấu, ghế có z > -10.44 sẽ TỰ ĐỘNG CHE MÀN HÌNH YOUTUBE!
-    const maskMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(21.2, 11.95),
-      new THREE.MeshBasicMaterial({ color: 0x000000 })
-    );
-    maskMesh.material.colorWrite = false;
-    maskMesh.position.set(0, 7.9, -10.44);
-    sceneGL.add(maskMesh);
 
     // 9. QUẢ CẦU DISCO TRÊN TRẦN
     const discoMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 24), getMat('#ffffff', 0.1, 0.9));
@@ -480,6 +488,40 @@ export default function Cinema3DScene({
       playerRef.current.setVolume(volume);
     }
   }, [volume, isMuted]);
+
+  // Đồng bộ Play/Pause và Seek thời gian với phòng
+  useEffect(() => {
+    if (!playerRef.current || !playerRef.current.getPlayerState) return;
+    if (Date.now() < suppressSyncUntilRef.current) return;
+
+    const currentLocalTime = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
+    const timeDiff = Math.abs(currentLocalTime - (playback?.currentTime || 0));
+
+    if (timeDiff > 2.5 && playback?.currentTime !== undefined) {
+      isSyncingRef.current = true;
+      playerRef.current.seekTo(playback.currentTime, true);
+      setTimeout(() => {
+        isSyncingRef.current = false;
+      }, 400);
+    }
+
+    try {
+      const state = playerRef.current.getPlayerState();
+      if (playback?.isPlaying && state !== 1 && state !== 3) {
+        isSyncingRef.current = true;
+        playerRef.current.playVideo();
+        setTimeout(() => {
+          isSyncingRef.current = false;
+        }, 400);
+      } else if (!playback?.isPlaying && state === 1) {
+        isSyncingRef.current = true;
+        playerRef.current.pauseVideo();
+        setTimeout(() => {
+          isSyncingRef.current = false;
+        }, 400);
+      }
+    } catch (e) {}
+  }, [playback?.isPlaying, playback?.currentTime]);
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#121313]">
