@@ -2,15 +2,6 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
-// Danh sách tên khán giả xuất hiện trên lưng ghế
-const DEFAULT_NAMES = [
-  'Truong son', 'MCK', 'Quang', 'Phu', 'habesocki',
-  '12345', 'thich xac cuc', 'Hồng Sơn', 'Minh Vũ', 'Thu Thảo',
-  'Đức Huy', 'Tuấn Anh', 'Bảo Ngọc', 'Hoàng Nam', 'Khánh Linh',
-  'Phương Anh', 'Văn Hùng', 'Thanh Tùng', 'Kim Ngân', 'Thành Long',
-  'Anh Dũng', 'Hải Yến', 'Quỳnh Chi', 'Việt Hoàng', 'Thùy Dương'
-];
-
 export default function Cinema3DScene({
   video,
   playback,
@@ -18,6 +9,12 @@ export default function Cinema3DScene({
   isMuted = false,
   onSyncAction,
   onVideoEnded,
+  seats = [],
+  users = [],
+  currentUserId,
+  onSelectSeat,
+  isStandingOnStage = false,
+  myProfile,
 }) {
   const containerRef = useRef(null);
   const playerRef = useRef(null);
@@ -25,14 +22,18 @@ export default function Cinema3DScene({
   const suppressSyncUntilRef = useRef(0);
   const currentVideoIdRef = useRef(video?.id);
 
+  // Refs để cập nhật động khi users hoặc seats thay đổi mà không re-render Three.js canvas
+  const updateAudienceRef = useRef(null);
+  const onSelectSeatRef = useRef(onSelectSeat);
+  onSelectSeatRef.current = onSelectSeat;
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     // SCENES: Scene WebGL & Scene CSS3D
     const sceneGL = new THREE.Scene();
-    // ĐỂ WEBGL HOÀN TOÀN TRONG SUỐT Ở KHU VỰC MÀN HÌNH ĐỂ THẤY YOUTUBE BÊN DƯỚI!
-    sceneGL.background = null;
+    sceneGL.background = null; // Trong suốt để thấy YouTube bên dưới
     sceneGL.fog = new THREE.FogExp2(0x111212, 0.0045);
 
     const sceneCSS = new THREE.Scene();
@@ -78,21 +79,17 @@ export default function Cinema3DScene({
     container.appendChild(rendererGL.domElement);
 
     // HỆ THỐNG ÁNH SÁNG CHÍNH XÁC CỦA CHOIGIVUI.COM
-    // Ambient Light
     const ambientLight = new THREE.AmbientLight(0xd6dfcc, 2.65);
     sceneGL.add(ambientLight);
 
-    // PointLight rọi màn hình: (0, 8, -7)
     const screenLight = new THREE.PointLight(0xb9d368, 150, 55, 1.5);
     screenLight.position.set(0, 8, -7);
     sceneGL.add(screenLight);
 
-    // PointLight trần: (0, 15, 9)
     const ceilingLight = new THREE.PointLight(0xf3b3bc, 80, 40, 1.7);
     ceilingLight.position.set(0, 15, 9);
     sceneGL.add(ceilingLight);
 
-    // Đèn rọi 2 bên tường: (-10, 9, 1), (10, 9, 3), (0, 14, 9)
     const wallLight1 = new THREE.PointLight(0xaa00aa, 45, 1.25);
     wallLight1.position.set(-10, 9, 1);
     sceneGL.add(wallLight1);
@@ -105,7 +102,7 @@ export default function Cinema3DScene({
     wallLight3.position.set(0, 14, 9);
     sceneGL.add(wallLight3);
 
-    // Helper tạo vật liệu & hình khối nhanh
+    // Helper tạo vật liệu & hình khối
     const materialCache = new Map();
     const getMat = (color, roughness = 0.8, metalness = 0) => {
       const key = `${color}_${roughness}_${metalness}`;
@@ -131,7 +128,6 @@ export default function Cinema3DScene({
     // 2. 10 HÀNG BẬC THANG DỐC CỦA RẠP CHIẾU
     for (let e = 0; e < 10; e++) {
       createBox(sceneGL, 0, e * 0.34 - 0.12, -1 + e * 2, 27, 0.24, 2, getMat(e % 2 ? '#31282a' : '#2c2527'));
-      // Các dải đèn LED nhỏ dọc bậc thang
       for (const t of [-8.8, -4.7, 1.15, 6.75]) {
         createBox(sceneGL, t, e * 0.34 + 0.025, -1 + e * 2, 0.045, 0.035, 1.65, getBasicMat('#c28c58'));
       }
@@ -142,21 +138,19 @@ export default function Cinema3DScene({
     createBox(sceneGL, 0, 0.1, -7, 29, 0.4, 6, getMat('#282727'));
     createBox(sceneGL, 0, 0.34, -6, 25, 0.05, 0.06, getBasicMat('#b0804f'));
 
-    // 4. TƯỜNG SAU (FRONT WALL) - Để trống ô màn hình 21.25 x 11.95 để YouTube CSS3D hiển thị rõ nét!
-    createBox(sceneGL, 0, 15.9, -12, 30, 4.2, 0.5, getMat('#191b1b'));       // Phần tường trên
-    createBox(sceneGL, 0, 0.95, -12, 30, 2.1, 0.5, getMat('#191b1b'));       // Phần tường dưới chân sân khấu
-    createBox(sceneGL, -12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));   // Phần tường bên trái
-    createBox(sceneGL, 12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));    // Phần tường bên phải
+    // 4. TƯỜNG SAU (Cắt rỗng khu vực màn chiếu để YouTube xuyên qua)
+    createBox(sceneGL, 0, 15.9, -12, 30, 4.2, 0.5, getMat('#191b1b'));
+    createBox(sceneGL, 0, 0.95, -12, 30, 2.1, 0.5, getMat('#191b1b'));
+    createBox(sceneGL, -12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));
+    createBox(sceneGL, 12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));
 
     // 5. HAI BỨC TƯỜNG BÊN TRÁI VÀ PHẢI VỚI ĐÈN RỌI VÀ SỌC LED
     for (const e of [-15, 15]) {
       createBox(sceneGL, e, 8, 5, 0.35, 18, 35, getMat('#212324'));
-      // Các cột đèn sọc LED màu vàng ấm
       for (let t = -8; t < 24; t += 3.5) {
         createBox(sceneGL, e < 0 ? e + 0.21 : e - 0.21, 7.5, t, 0.12, 10, 2.5, getMat('#2b2d2c'));
         createBox(sceneGL, e < 0 ? e + 0.3 : e - 0.3, 8, t + 1.6, 0.06, 9, 0.04, getBasicMat('#a97a51'));
 
-        // Đèn rọi Spot (Cone đèn rọi hắt xuống sàn)
         const spotLight = new THREE.SpotLight(0xffdf88, 1.2, 16, Math.PI / 6, 0.5);
         spotLight.position.set(e < 0 ? e + 0.8 : e - 0.8, 12, t + 1.6);
         spotLight.target.position.set(e < 0 ? e + 4 : e - 4, 0, t + 1.6);
@@ -178,16 +172,12 @@ export default function Cinema3DScene({
       }
     }
 
-    // 7. KHUNG VIỀN MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC CỦA CHOIGIVUI.COM
-    // Khung viền bao quanh (để rỗng ở giữa cho video YouTube phát xuyên qua)
-    // Kích thước mở: Rộng 21.25, Cao 11.95, Tọa độ tâm: (0, 7.9, -10.45)
-    // Viền trong màu xanh cốm matcha (#6b725d)
-    createBox(sceneGL, 0, 13.92, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d')); // Cạnh trên
-    createBox(sceneGL, 0, 1.88, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d'));  // Cạnh dưới
-    createBox(sceneGL, -10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d')); // Cạnh trái
-    createBox(sceneGL, 10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d'));  // Cạnh phải
+    // 7. KHUNG VIỀN MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC (Rỗng tâm)
+    createBox(sceneGL, 0, 13.92, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d'));
+    createBox(sceneGL, 0, 1.88, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d'));
+    createBox(sceneGL, -10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d'));
+    createBox(sceneGL, 10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d'));
 
-    // Viền ngoài màu đen đậm rạp chiếu (#0c0d0d)
     createBox(sceneGL, 0, 14.17, -10.48, 22.2, 0.35, 0.16, getMat('#0c0d0d'));
     createBox(sceneGL, 0, 1.63, -10.48, 22.2, 0.35, 0.16, getMat('#0c0d0d'));
     createBox(sceneGL, -10.95, 7.9, -10.48, 0.35, 12.7, 0.16, getMat('#0c0d0d'));
@@ -212,11 +202,10 @@ export default function Cinema3DScene({
 
     // =================================================================
     // 8. MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT)
-    // Tích hợp 100% trong không gian 3D, nhân vật đứng sân khấu tự động che trước màn hình
     // =================================================================
     const screenWidth = 1280;
     const screenHeight = 720;
-    const screenScale = 21.25 / 1280; // Chuẩn tỷ lệ 16:9 khít với khung rạp!
+    const screenScale = 21.25 / 1280;
 
     const iframeDiv = document.createElement('div');
     iframeDiv.style.width = `${screenWidth}px`;
@@ -238,126 +227,241 @@ export default function Cinema3DScene({
     createBox(sceneGL, 0, 17, -0.5, 0.045, 2.1, 0.045, getMat('#6e736f', 0.2, 0.9));
 
     // =================================================================
-    // 10. BA NHÂN VẬT ĐỨNG TRÊN SÂN KHẤU (STAGE PERFORMERS CHUẨN ẢNH 1)
+    // 10. KHỞI TẠO 100 GHẾ SOFA TRỐNG (10 HÀNG x 10 CỘT CHUẨN CHOIGIVUI)
     // =================================================================
-    const createStageGuy = (x, z, shirtColor, ringColor) => {
-      const g = new THREE.Group();
-      g.position.set(x, 0.35, z);
+    const seatMap = new Map();
+    const seatHitBoxes = [];
 
-      // Vòng tròn neon dưới chân
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.45, 0.52, 32),
-        new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide })
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.02;
-      g.add(ring);
-
-      // Thân
-      const body = new THREE.Mesh(boxGeo, getMat(shirtColor, 0.7));
-      body.position.set(0, 1.23, 0);
-      body.scale.set(0.68, 0.83, 0.48);
-      g.add(body);
-
-      // Đầu tròn & Tóc
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 16), getMat('#cba07d', 0.6));
-      head.position.set(0, 1.99, 0);
-      g.add(head);
-
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.342, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#392d25', 0.9));
-      hair.rotation.x = -Math.PI / 2;
-      hair.position.set(0, 2.02, 0);
-      g.add(hair);
-
-      return g;
-    };
-
-    // 3 người trên sân khấu như ảnh 1:
-    const stageP1 = createStageGuy(-3.0, -6.5, '#93c5fd', '#f43f5e'); // Áo xanh da trời (vòng hồng)
-    const stageP2 = createStageGuy(0.0, -6.5, '#86efac', '#ec4899');  // Áo xanh cốm ở giữa (vòng tím hồng)
-    const stageP3 = createStageGuy(3.0, -6.5, '#fbcfe8', '#f43f5e');  // Áo hồng kem bên phải (vòng hồng)
-    sceneGL.add(stageP1);
-    sceneGL.add(stageP2);
-    sceneGL.add(stageP3);
-
-    // =================================================================
-    // 11. HÀNG GHẾ SOFA RẠP CHIẾU & KHÁN GIẢ (10 HÀNG CHUẨN CHOIGIVUI.COM)
-    // =================================================================
-    const sofaColors = ['#93c5fd', '#fbcfe8', '#fef08a', '#a7f3d0', '#c4b5fd', '#fde047', '#d8ef82', '#fca5a5'];
-
-    // Helper tạo Name Tag nhỏ gắn lưng ghế
-    const createNameTagTexture = (name) => {
-      const c = document.createElement('canvas');
-      c.width = 256;
-      c.height = 64;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#d2dacb';
-      ctx.beginPath();
-      ctx.roundRect(4, 4, 248, 56, 12);
-      ctx.fill();
-      ctx.strokeStyle = '#a6b89e';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.fillStyle = '#1e241c';
-      ctx.font = 'bold 26px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(name.slice(0, 12), 128, 34);
-      return new THREE.CanvasTexture(c);
-    };
-
-    // Tạo 10 hàng ghế
     for (let r = 0; r < 10; r++) {
+      const rowLetter = String.fromCharCode(65 + r); // A đến J
       const z = -1 + r * 2.0;
       const y = r * 0.34;
 
-      for (let c = 0; c < 12; c++) {
-        // Chia thành 2 dãy: Dãy trái 8 ghế, Dãy phải 4 ghế, ở giữa là lối đi
-        let x = (c - 5.5) * 1.45;
-        if (c >= 8) x += 1.2; // Lối đi có đèn
+      for (let c = 0; c < 10; c++) {
+        const seatNum = c + 1;
+        const seatId = `${rowLetter}${seatNum}`;
 
-        const isVip = (r === 0 && (c === 5 || c === 6));
+        // Chia làm 2 dãy, chừa lối đi có đèn LED ở giữa
+        let x = (c - 4.5) * 1.5;
+        if (c >= 5) x += 0.8;
+        else x -= 0.8;
 
-        // Ghế sofa rạp chiếu bo góc
-        const chairBack = createBox(sceneGL, x, y + 0.65, z, 1.1, 0.9, 0.35, getMat(isVip ? '#881337' : '#222629', 0.8));
-        const chairSeat = createBox(sceneGL, x, y + 0.25, z + 0.35, 1.1, 0.3, 0.8, getMat(isVip ? '#881337' : '#1c2022', 0.8));
+        const isVip = (r === 0 && (c === 4 || c === 5));
 
-        // Nếu là ghế VIP hoàng gia: Ngai vàng & Vương miện
+        // Ghế sofa
+        createBox(sceneGL, x, y + 0.65, z, 1.15, 0.9, 0.35, getMat(isVip ? '#881337' : '#222629', 0.8));
+        createBox(sceneGL, x, y + 0.25, z + 0.35, 1.15, 0.3, 0.8, getMat(isVip ? '#881337' : '#1c2022', 0.8));
+
+        // Ghế VIP có vương miện
         if (isVip) {
           const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.3, 6), getMat('#facc15', 0.2, 0.8));
           crown.position.set(x, y + 2.1, z);
           sceneGL.add(crown);
         }
 
-        // Khán giả ngồi trên ghế
-        const seatIndex = r * 12 + c;
-        if (seatIndex % 2 === 0 || r < 3) {
-          const color = sofaColors[seatIndex % sofaColors.length];
+        // Hit box để raycast bấm chọn ghế ngồi
+        const hitBox = new THREE.Mesh(
+          new THREE.BoxGeometry(1.3, 1.4, 1.3),
+          new THREE.MeshBasicMaterial({ visible: false })
+        );
+        hitBox.position.set(x, y + 0.7, z + 0.3);
+        hitBox.userData = { seatId, x, y, z, isVip };
+        sceneGL.add(hitBox);
+        seatHitBoxes.push(hitBox);
 
-          // Thân người ngồi
-          createBox(sceneGL, x, y + 0.8, z + 0.25, 0.68, 0.75, 0.5, getMat(color, 0.7));
-
-          // Đầu & Tóc
-          const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), getMat('#cba07d', 0.6));
-          head.position.set(x, y + 1.4, z + 0.25);
-          sceneGL.add(head);
-
-          const hair = new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#2b221c', 0.9));
-          hair.rotation.x = -Math.PI / 2;
-          hair.position.set(x, y + 1.44, z + 0.25);
-          sceneGL.add(hair);
-
-          // Thẻ tên gắn sau lưng ghế
-          const name = DEFAULT_NAMES[seatIndex % DEFAULT_NAMES.length];
-          const tagMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(0.7, 0.18),
-            new THREE.MeshBasicMaterial({ map: createNameTagTexture(name), transparent: true })
-          );
-          tagMesh.position.set(x, y + 0.65, z + 0.19);
-          sceneGL.add(tagMesh);
-        }
+        seatMap.set(seatId, { id: seatId, x, y, z, isVip, row: rowLetter, number: seatNum });
       }
     }
+
+    // =================================================================
+    // 11. NHÓM KHÁN GIẢ & SÂN KHẤU DYNAMIC (AI VÀO THÌ MỚI CÓ NGƯỜI ĐÓ!)
+    // =================================================================
+    const audienceGroup = new THREE.Group();
+    sceneGL.add(audienceGroup);
+
+    let activeStageGuys = [];
+
+    // Helper tạo Name Tag nhỏ gắn lưng ghế hoặc trên đầu
+    const createNameTagTexture = (name, isMe = false) => {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 64;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = isMe ? '#d8ef82' : '#d2dacb';
+      ctx.beginPath();
+      ctx.roundRect(4, 4, 248, 56, 12);
+      ctx.fill();
+
+      ctx.strokeStyle = isMe ? '#ffffff' : '#a6b89e';
+      ctx.lineWidth = isMe ? 5 : 4;
+      ctx.stroke();
+
+      ctx.fillStyle = '#1e241c';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(name.slice(0, 14), 128, 34);
+
+      return new THREE.CanvasTexture(c);
+    };
+
+    // Hàm render động: CHỈ vẽ người thực sự có mặt trong phòng!
+    const updateAudience = (userList, seatList, stageStatus) => {
+      // Dọn sạch khán giả cũ
+      while (audienceGroup.children.length > 0) {
+        const obj = audienceGroup.children[0];
+        audienceGroup.remove(obj);
+        if (obj.geometry) obj.geometry.dispose();
+      }
+      activeStageGuys = [];
+
+      let currentAudience = Array.isArray(userList) && userList.length > 0 ? [...userList] : [];
+      if (currentAudience.length === 0) {
+        currentAudience = [
+          {
+            id: currentUserId || 'me',
+            nickname: myProfile?.nickname || 'Bạn',
+            color: myProfile?.color || '#93c5fd',
+            avatar: myProfile?.avatar || '🍿',
+            seatId: 'A5',
+            isStage: stageStatus,
+          },
+        ];
+      }
+
+      const stageGuys = [];
+      const seatedGuys = [];
+
+      currentAudience.forEach((u) => {
+        const onStage = (u.id === currentUserId && stageStatus) || Boolean(u.isStage);
+        if (onStage) stageGuys.push(u);
+        else seatedGuys.push(u);
+      });
+
+      // 1. VẼ NHỮNG NGƯỜI ĐANG ĐỨNG TRÊN SÂN KHẤU
+      const nStage = stageGuys.length;
+      stageGuys.forEach((u, i) => {
+        let sx = 0;
+        if (nStage === 2) sx = i === 0 ? -1.8 : 1.8;
+        else if (nStage === 3) sx = (i - 1) * 2.8;
+        else if (nStage > 3) sx = (i - (nStage - 1) / 2) * 2.4;
+
+        const sy = 0.35;
+        const sz = -6.5;
+
+        // Vòng tròn neon dưới chân
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.48, 0.56, 32),
+          new THREE.MeshBasicMaterial({ color: u.color || '#ec4899', side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(sx, sy + 0.02, sz);
+        audienceGroup.add(ring);
+
+        // Nhân vật
+        const g = new THREE.Group();
+        g.position.set(sx, sy, sz);
+
+        const body = new THREE.Mesh(boxGeo, getMat(u.color || '#93c5fd', 0.7));
+        body.position.set(0, 1.23, 0);
+        body.scale.set(0.68, 0.83, 0.48);
+        g.add(body);
+
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 16), getMat('#cba07d', 0.6));
+        head.position.set(0, 1.99, 0);
+        g.add(head);
+
+        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.342, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#392d25', 0.9));
+        hair.rotation.x = -Math.PI / 2;
+        hair.position.set(0, 2.02, 0);
+        g.add(hair);
+
+        // Name tag trên đầu
+        const isMe = (u.id === currentUserId || u.id === 'me');
+        const displayName = isMe ? `${u.nickname || 'Bạn'} (Bạn)` : (u.nickname || 'Khán giả');
+        const tag = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.9, 0.23),
+          new THREE.MeshBasicMaterial({ map: createNameTagTexture(displayName, isMe), transparent: true })
+        );
+        tag.position.set(0, 2.5, 0);
+        g.add(tag);
+
+        audienceGroup.add(g);
+        activeStageGuys.push(g);
+      });
+
+      // 2. VẼ NHỮNG NGƯỜI ĐANG NGỒI TRÊN GHẾ (CÒN LẠI ĐỂ TRỐNG HOÀN TOÀN!)
+      const usedSeatIds = new Set();
+      seatedGuys.forEach((u) => {
+        let seatPos = u.seatId ? seatMap.get(u.seatId) : null;
+        if (!seatPos || usedSeatIds.has(seatPos.id)) {
+          // Gán ghế trống gần nhất
+          for (const [id, pos] of seatMap.entries()) {
+            if (!usedSeatIds.has(id)) {
+              seatPos = pos;
+              break;
+            }
+          }
+        }
+        if (!seatPos) return;
+        usedSeatIds.add(seatPos.id);
+
+        const { x, y, z } = seatPos;
+        const isMe = (u.id === currentUserId || u.id === 'me');
+
+        // Thân người ngồi
+        const body = new THREE.Mesh(boxGeo, getMat(u.color || '#93c5fd', 0.7));
+        body.position.set(x, y + 0.8, z + 0.25);
+        body.scale.set(0.68, 0.75, 0.5);
+        audienceGroup.add(body);
+
+        // Đầu & Tóc
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), getMat('#cba07d', 0.6));
+        head.position.set(x, y + 1.4, z + 0.25);
+        audienceGroup.add(head);
+
+        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#2b221c', 0.9));
+        hair.rotation.x = -Math.PI / 2;
+        hair.position.set(x, y + 1.44, z + 0.25);
+        audienceGroup.add(hair);
+
+        // Thẻ tên gắn sau lưng ghế
+        const displayName = isMe ? `${u.nickname || 'Bạn'} (Bạn)` : (u.nickname || 'Khán giả');
+        const tag = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.75, 0.2),
+          new THREE.MeshBasicMaterial({ map: createNameTagTexture(displayName, isMe), transparent: true })
+        );
+        tag.position.set(x, y + 0.65, z + 0.19);
+        audienceGroup.add(tag);
+      });
+    };
+
+    updateAudienceRef.current = updateAudience;
+    updateAudience(users, seats, isStandingOnStage);
+
+    // =================================================================
+    // 12. RAYCASTING: CLICK VÀO GHẾ ĐỂ ĐỔI CHỖ NGỒI
+    // =================================================================
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const onPointerDown = (event) => {
+      if (event.button !== 0) return; // Chỉ chuột trái
+      const rect = rendererGL.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(seatHitBoxes);
+      if (hits.length > 0) {
+        const hitSeatId = hits[0].object.userData?.seatId;
+        if (hitSeatId && onSelectSeatRef.current) {
+          onSelectSeatRef.current(hitSeatId);
+        }
+      }
+    };
+    container.addEventListener('pointerdown', onPointerDown);
 
     // =================================================================
     // KHỞI TẠO YOUTUBE PLAYER TRONG CSS3D SCREEN
@@ -380,10 +484,16 @@ export default function Cinema3DScene({
           },
           events: {
             onReady: (event) => {
+              if (video?.id && video.id !== '5qap5aO4i9A') {
+                event.target.loadVideoById({
+                  videoId: video.id,
+                  startSeconds: playback?.currentTime || 0,
+                });
+              }
               event.target.setVolume(volume);
               if (isMuted) event.target.mute();
               if (playback?.currentTime) event.target.seekTo(playback.currentTime, true);
-              if (playback?.isPlaying) event.target.playVideo();
+              if (playback?.isPlaying !== false) event.target.playVideo();
             },
             onStateChange: (event) => {
               if (event.data === window.YT.PlayerState.ENDED) {
@@ -413,9 +523,9 @@ export default function Cinema3DScene({
 
       discoMesh.rotation.y += 0.005;
 
-      stageP1.position.y = 0.35 + Math.sin(elapsed * 2) * 0.02;
-      stageP2.position.y = 0.35 + Math.cos(elapsed * 2.2) * 0.02;
-      stageP3.position.y = 0.35 + Math.sin(elapsed * 1.8) * 0.02;
+      activeStageGuys.forEach((guy, idx) => {
+        guy.position.y = 0.35 + Math.sin(elapsed * 2 + idx) * 0.02;
+      });
 
       rendererCSS.render(sceneCSS, camera);
       rendererGL.render(sceneGL, camera);
@@ -433,6 +543,7 @@ export default function Cinema3DScene({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      container.removeEventListener('pointerdown', onPointerDown);
       if (checkInterval) clearInterval(checkInterval);
       cancelAnimationFrame(animationFrameId);
       if (playerRef.current) {
@@ -448,6 +559,13 @@ export default function Cinema3DScene({
       rendererGL.dispose();
     };
   }, []);
+
+  // Cập nhật động danh sách người ngồi khi users / seats / stage thay đổi
+  useEffect(() => {
+    if (updateAudienceRef.current) {
+      updateAudienceRef.current(users, seats, isStandingOnStage);
+    }
+  }, [users, seats, isStandingOnStage, currentUserId, myProfile]);
 
   // Xử lý đổi video hoặc Replay
   useEffect(() => {
@@ -525,7 +643,7 @@ export default function Cinema3DScene({
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#121313]">
-      <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+      <div ref={containerRef} className="absolute inset-0 w-full h-full cursor-pointer" />
     </div>
   );
 }

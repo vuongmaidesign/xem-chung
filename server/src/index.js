@@ -64,6 +64,11 @@ io.on('connection', (socket) => {
       user,
       totalUsers: room.users.size,
     });
+    // Đồng bộ sơ đồ ghế mới ngay cho toàn phòng
+    io.to(cleanRoomId).emit('seats-updated', {
+      seats: room.seats,
+      users: Array.from(room.users.values()),
+    });
 
     console.log(`[${cleanRoomId}] Khán giả "${user.nickname}" (${socket.id}) vào rạp`);
   });
@@ -92,6 +97,28 @@ io.on('connection', (socket) => {
         users: Array.from(room.users.values()),
       });
     }
+  });
+
+  // Lên / Xuống sân khấu
+  socket.on('toggle-stage', ({ isStage }) => {
+    if (!currentRoomId) return;
+    roomManager.toggleStage(currentRoomId, socket.id, isStage);
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    io.to(currentRoomId).emit('seats-updated', {
+      seats: room.seats,
+      users: Array.from(room.users.values()),
+    });
+  });
+
+  // Đổi trang phục / Tên hiển thị (Tủ đồ)
+  socket.on('update-profile', (profile) => {
+    if (!currentRoomId) return;
+    roomManager.updateProfile(currentRoomId, socket.id, profile);
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    io.to(currentRoomId).emit('seats-updated', {
+      seats: room.seats,
+      users: Array.from(room.users.values()),
+    });
   });
 
   // Đồng bộ Play / Pause / Seek

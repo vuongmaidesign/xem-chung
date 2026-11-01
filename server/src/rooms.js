@@ -134,12 +134,37 @@ export class RoomManager {
 
   addUser(roomId, socketId, profile) {
     const room = this.getOrCreateRoom(roomId);
+
+    // Tự động tìm ghế trống để xếp cho khán giả mới vào
+    // Ưu tiên các hàng ghế đầu đẹp nhất: A5, A6, A4, A7, B5, B6...
+    let assignedSeatId = null;
+    const preferredSeatIds = ['A5', 'A6', 'A4', 'A7', 'A3', 'A8', 'B5', 'B6', 'B4', 'B7', 'C5', 'C6'];
+    const preferredEmpty = preferredSeatIds.find(id => {
+      const s = room.seats.find(seat => seat.id === id);
+      return s && !s.occupiedBy;
+    });
+
+    if (preferredEmpty) {
+      const target = room.seats.find(s => s.id === preferredEmpty);
+      if (target) {
+        target.occupiedBy = socketId;
+        assignedSeatId = preferredEmpty;
+      }
+    } else {
+      const firstEmpty = room.seats.find(s => !s.occupiedBy);
+      if (firstEmpty) {
+        firstEmpty.occupiedBy = socketId;
+        assignedSeatId = firstEmpty.id;
+      }
+    }
+
     const user = {
       id: socketId,
       nickname: profile.nickname || `Khán giả_${socketId.slice(0, 4)}`,
       avatar: profile.avatar || '🍿',
-      color: profile.color || '#d8ef82', // Màu neon chuẩn của choigivui
-      seatId: null,
+      color: profile.color || '#93c5fd',
+      seatId: assignedSeatId,
+      isStage: false,
       joinedAt: Date.now(),
     };
 
@@ -150,6 +175,28 @@ export class RoomManager {
     }
 
     return { room, user };
+  }
+
+  toggleStage(roomId, socketId, isStage) {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const user = room.users.get(socketId);
+    if (!user) return false;
+
+    user.isStage = typeof isStage === 'boolean' ? isStage : !user.isStage;
+    return user.isStage;
+  }
+
+  updateProfile(roomId, socketId, profile) {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    const user = room.users.get(socketId);
+    if (!user) return null;
+
+    if (profile.nickname) user.nickname = profile.nickname;
+    if (profile.avatar) user.avatar = profile.avatar;
+    if (profile.color) user.color = profile.color;
+    return user;
   }
 
   removeUser(socketId) {

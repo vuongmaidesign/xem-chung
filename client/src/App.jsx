@@ -41,6 +41,23 @@ const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
   (window.location.hostname === 'localhost' ? 'http://localhost:4000' : window.location.origin);
 
+function generate100Seats(occupiedSeatId = 'A5', userId = 'me') {
+  const seats = [];
+  for (let r = 0; r < 10; r++) {
+    const row = String.fromCharCode(65 + r);
+    for (let c = 1; c <= 10; c++) {
+      const id = `${row}${c}`;
+      seats.push({
+        id,
+        row,
+        number: c,
+        occupiedBy: id === occupiedSeatId ? userId : null,
+      });
+    }
+  }
+  return seats;
+}
+
 export default function App() {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -88,10 +105,19 @@ export default function App() {
   // Input chat đáy màn hình
   const [chatInput, setChatInput] = useState('');
 
-  // Room State
-  const [roomState, setRoomState] = useState({
-    users: [],
-    seats: [],
+  // Room State: Khởi tạo với chỉ người dùng hiện tại (ai vào mới có người đó)
+  const [roomState, setRoomState] = useState(() => ({
+    users: [
+      {
+        id: 'me',
+        nickname: profile.nickname || 'Bạn',
+        avatar: profile.avatar || '🍿',
+        color: profile.color || '#93c5fd',
+        seatId: 'A5',
+        isStage: false,
+      },
+    ],
+    seats: generate100Seats('A5', 'me'),
     currentVideo: {
       id: '5qap5aO4i9A',
       title: '(Lồng Tiếng) Doremon movie36:Nobita và Nước Nhật thời nguyên thủy',
@@ -102,10 +128,10 @@ export default function App() {
     playback: { isPlaying: true, currentTime: 212 },
     queue: [],
     chat: [],
-    skipVotesCount: 24,
-    requiredVotes: 35,
-    totalUsers: 98,
-  });
+    skipVotesCount: 0,
+    requiredVotes: 1,
+    totalUsers: 1,
+  }));
 
   // Bong bóng chat hiển thị trên đầu khán giả trong rạp 3D
   const [floatingBubbles, setFloatingBubbles] = useState([
@@ -141,17 +167,49 @@ export default function App() {
       if (state) {
         setRoomState((prev) => ({
           ...prev,
-          users: state.users || [],
-          seats: state.seats || [],
+          users: state.users || prev.users,
+          seats: state.seats || prev.seats,
           currentVideo: state.currentVideo || prev.currentVideo,
           playback: state.playback || prev.playback,
           queue: state.queue || [],
           chat: state.chat || [],
-          skipVotesCount: state.skipVotesCount || 24,
-          requiredVotes: state.requiredVotes || 35,
-          totalUsers: Math.max(state.totalUsers || 1, 98),
+          skipVotesCount: state.skipVotesCount || 0,
+          requiredVotes: state.requiredVotes || 1,
+          totalUsers: state.totalUsers || (state.users ? state.users.length : 1),
         }));
       }
+    });
+
+    // Khi có người mới vào phòng
+    s.on('user-joined', ({ user, totalUsers }) => {
+      setRoomState((prev) => {
+        const nextUsers = [...prev.users.filter((u) => u.id !== user.id), user];
+        return {
+          ...prev,
+          users: nextUsers,
+          totalUsers: totalUsers || nextUsers.length,
+        };
+      });
+    });
+
+    // Khi sơ đồ ghế cập nhật (chọn ghế, đổi ghế, lên sân khấu)
+    s.on('seats-updated', ({ seats, users }) => {
+      setRoomState((prev) => ({
+        ...prev,
+        seats: seats || prev.seats,
+        users: users || prev.users,
+        totalUsers: users ? users.length : prev.totalUsers,
+      }));
+    });
+
+    // Khi có người rời phòng
+    s.on('user-left', ({ userId, seats, users, totalUsers }) => {
+      setRoomState((prev) => ({
+        ...prev,
+        users: users || prev.users.filter((u) => u.id !== userId),
+        seats: seats || prev.seats.map((s) => (s.occupiedBy === userId ? { ...s, occupiedBy: null } : s)),
+        totalUsers: totalUsers || Math.max(1, prev.users.length - 1),
+      }));
     });
 
     s.on('video-changed', ({ video, playback, isLoop }) => {
@@ -308,6 +366,33 @@ export default function App() {
     setChatInput('');
   };
 
+  // Chọn ghế ngồi trong rạp 3D
+  const handleSelectSeat = (seatId) => {
+    if (socket && socket.connected) {
+      socket.emit('select-seat', { seatId });
+    }
+    const myId = socket?.id || 'me';
+    setRoomState((prev) => {
+      const updatedSeats = prev.seats.map((s) => {
+        if (s.id === seatId) return { ...s, occupiedBy: myId };
+        if (s.occupiedBy === myId) return { ...s, occupiedBy: null };
+        return s;
+      });
+      const updatedUsers = prev.users.map((u) => {
+        if (u.id === myId || (!socket?.id && u.id === 'me')) {
+          return { ...u, seatId, isStage: false };
+        }
+        return u;
+      });
+      return {
+        ...prev,
+        seats: updatedSeats,
+        users: updatedUsers,
+      };
+    });
+    setIsStandingOnStage(false);
+  };
+
   const handleAddVideo = (url, playNow) => {
     if (socket && socket.connected) {
       socket.emit('add-video', { url, playNow });
@@ -378,7 +463,12 @@ export default function App() {
           isMuted={isMuted}
           onSyncAction={handleSyncAction}
           onVideoEnded={handleVideoEnded}
+          seats={roomState.seats}
+          users={roomState.users}
+          currentUserId={socket?.id || 'me'}
+          onSelectSeat={handleSelectSeat}
           isStandingOnStage={isStandingOnStage}
+          myProfile={profile}
         />
       </div>
 
@@ -462,11 +552,11 @@ export default function App() {
           <span className="text-white/20">|</span>
           <div className="flex items-center gap-1.5 text-[11px] font-mono">
             <Users size={13} className="text-[#8e9c80]" />
-            <span>{roomState.totalUsers} đang online</span>
+            <span>{roomState.users?.length || roomState.totalUsers || 1} đang online</span>
           </div>
           <span className="text-white/20">|</span>
           <span className="text-[11px] font-mono text-[#8e9c80]">
-            63 / 100 ghế
+            {(roomState.seats ? roomState.seats.filter((s) => s.occupiedBy).length : (roomState.users?.length || 1))} / 100 ghế
           </span>
         </div>
 
@@ -581,7 +671,11 @@ export default function App() {
         {/* Tương tác (Lên sân khấu / Thả pháo hoa) */}
         <button
           onClick={() => {
-            setIsStandingOnStage(!isStandingOnStage);
+            const nextStage = !isStandingOnStage;
+            setIsStandingOnStage(nextStage);
+            if (socket && socket.connected) {
+              socket.emit('toggle-stage', { isStage: nextStage });
+            }
             confetti({ particleCount: 40, spread: 70, origin: { y: 0.8 } });
           }}
           className={`flex flex-col items-center p-2 rounded-xl transition-all group ${
@@ -751,7 +845,13 @@ export default function App() {
         onSaveProfile={(newProf) => {
           setProfile(newProf);
           localStorage.setItem('wetube_profile', JSON.stringify(newProf));
-          socket?.emit('join-room', { roomId, ...newProf });
+          if (socket && socket.connected) {
+            socket.emit('update-profile', newProf);
+          }
+          setRoomState((prev) => ({
+            ...prev,
+            users: prev.users.map((u) => (u.id === socket?.id || u.id === 'me') ? { ...u, ...newProf } : u),
+          }));
         }}
       />
 
