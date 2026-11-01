@@ -164,7 +164,6 @@ io.on('connection', (socket) => {
       return;
     }
     const result = roomManager.playNext(currentRoomId);
-    const room = roomManager.getOrCreateRoom(currentRoomId);
 
     if (result) {
       io.to(currentRoomId).emit('video-changed', {
