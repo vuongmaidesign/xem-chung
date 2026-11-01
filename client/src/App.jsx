@@ -24,13 +24,19 @@ import {
   Headphones,
   Check,
   RotateCcw,
-  SkipForward,
 } from 'lucide-react';
 
 import Cinema3DScene from './components/Cinema3DScene';
 import ScreenPlayer from './components/ScreenPlayer';
+import ChatBox from './components/ChatBox';
 import QueueModal from './components/QueueModal';
-import ProfileModal from './components/ProfileModal';
+import {
+  SendVideoModal,
+  WardrobeModal,
+  PrivateRoomsModal,
+  PostPhotoModal,
+  SupportModal,
+} from './components/ChoiGiVuiModals';
 
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
@@ -59,14 +65,22 @@ export default function App() {
     return {
       nickname: 'Khán giả',
       avatar: '🍿',
-      color: '#d8ef82',
+      color: '#93c5fd',
+      gender: 'male',
     };
   });
 
-  // Modals & Panels
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
+  // Modals & Panels State
+  const [isSendVideoOpen, setIsSendVideoOpen] = useState(false);
+  const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isWardrobeOpen, setIsWardrobeOpen] = useState(false);
+  const [isPrivateRoomsOpen, setIsPrivateRoomsOpen] = useState(false);
+  const [isPostPhotoOpen, setIsPostPhotoOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
+
+  // Sân khấu
+  const [isStandingOnStage, setIsStandingOnStage] = useState(false);
 
   // Audio state
   const [volume, setVolume] = useState(100);
@@ -89,9 +103,9 @@ export default function App() {
     playback: { isPlaying: true, currentTime: 212 },
     queue: [],
     chat: [],
-    skipVotesCount: 22,
-    requiredVotes: 37,
-    totalUsers: 103,
+    skipVotesCount: 24,
+    requiredVotes: 35,
+    totalUsers: 98,
   });
 
   // Bong bóng chat hiển thị trên đầu khán giả trong rạp 3D
@@ -99,8 +113,8 @@ export default function App() {
     {
       id: 'demo-1',
       text: 'skip đi cái này để ăn cơm hãy xem',
-      x: 65, // % từ trái
-      y: 72, // % từ trên
+      x: 68, // % từ trái
+      y: 73, // % từ trên
     },
   ]);
 
@@ -134,9 +148,9 @@ export default function App() {
           playback: state.playback || prev.playback,
           queue: state.queue || [],
           chat: state.chat || [],
-          skipVotesCount: state.skipVotesCount || 22,
-          requiredVotes: state.requiredVotes || 37,
-          totalUsers: Math.max(state.totalUsers || 1, 103),
+          skipVotesCount: state.skipVotesCount || 24,
+          requiredVotes: state.requiredVotes || 35,
+          totalUsers: Math.max(state.totalUsers || 1, 98),
         }));
       }
     });
@@ -184,7 +198,7 @@ export default function App() {
         ...prev,
         skipVotesCount: current,
         requiredVotes: required,
-        totalUsers: Math.max(totalUsers, 103),
+        totalUsers: Math.max(totalUsers, 98),
       }));
     });
 
@@ -194,20 +208,21 @@ export default function App() {
         chat: [...prev.chat, message],
       }));
 
-      // Tạo bong bóng thoại nổi trên khán giả
-      const randomX = Math.floor(Math.random() * 40) + 30; // 30% - 70%
-      const randomY = Math.floor(Math.random() * 20) + 65; // 65% - 85%
+      // Vị trí nổi bong bóng thoại trên đầu nhân vật
+      const posX = isStandingOnStage ? 50 : Math.floor(Math.random() * 36) + 32;
+      const posY = isStandingOnStage ? 55 : Math.floor(Math.random() * 18) + 68;
+
       const newBubble = {
         id: message.id || Date.now(),
         text: message.text,
-        x: randomX,
-        y: randomY,
+        x: posX,
+        y: posY,
       };
 
       setFloatingBubbles((prev) => [...prev, newBubble]);
       setTimeout(() => {
         setFloatingBubbles((prev) => prev.filter((b) => b.id !== newBubble.id));
-      }, 5000);
+      }, 5500);
     });
 
     setSocket(s);
@@ -215,7 +230,7 @@ export default function App() {
     return () => {
       s.disconnect();
     };
-  }, [roomId]);
+  }, [roomId, isStandingOnStage]);
 
   const handleSyncAction = (action, time) => {
     if (socket) {
@@ -243,6 +258,12 @@ export default function App() {
       socket.emit('send-message', { text: chatInput.trim() });
     }
     setChatInput('');
+  };
+
+  const handleAddVideo = (url, playNow) => {
+    if (socket) {
+      socket.emit('add-video', { url, playNow });
+    }
   };
 
   const handleCopyLink = () => {
@@ -277,12 +298,13 @@ export default function App() {
           seats={roomState.seats}
           users={roomState.users}
           currentUserId={socket?.id}
+          isStandingOnStage={isStandingOnStage}
+          myProfile={profile}
         />
       </div>
 
       {/* 2. MÀN HÌNH YOUTUBE GHÉP KHỚP HOÀN HẢO VÀO TƯỜNG RẠP 3D */}
       <div className="absolute left-1/2 -translate-x-1/2 top-[17%] w-[54%] max-w-[900px] aspect-[16/9.1] z-10 flex flex-col items-center">
-        {/* Viền màn hình rạp chiếu */}
         <div className="w-full h-full bg-black rounded-sm border-[6px] border-[#0a0a0a] shadow-[0_10px_50px_rgba(0,0,0,0.9)] overflow-hidden relative">
           <ScreenPlayer
             video={roomState.currentVideo}
@@ -294,7 +316,7 @@ export default function App() {
           />
         </div>
 
-        {/* Chữ nổi WETUBE CINÉ ở chân màn hình như trong ảnh */}
+        {/* Chữ nổi WETUBE CINÉ ở chân màn hình */}
         <div className="mt-1 px-3 py-0.5 rounded bg-black/60 border border-white/5 text-[9px] font-mono tracking-[3px] text-[#8e9c80] uppercase">
           WETUBE CINÉ
         </div>
@@ -317,7 +339,6 @@ export default function App() {
       <header className="absolute top-4 inset-x-5 z-30 flex items-start justify-between pointer-events-none">
         {/* Góc trên bên trái: Logo + Tên bài hát + Box Vote skip */}
         <div className="flex flex-col gap-4 pointer-events-auto max-w-sm">
-          {/* Logo Brand */}
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#e11d48] flex items-center justify-center text-white font-extrabold text-base shadow-lg shadow-rose-600/30">
               w
@@ -332,7 +353,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Thông tin trên màn ảnh & Vote Skip Box y chang ảnh screenshot */}
           <div className="flex flex-col gap-1.5 mt-2">
             <span className="text-[10px] font-mono tracking-[1.5px] uppercase text-[#8e9c80]">
               TRÊN MÀN ẢNH
@@ -341,10 +361,10 @@ export default function App() {
               {roomState.currentVideo?.title}
             </h2>
             <span className="text-[11px] text-[#8e9c80]">
-              của đề xuất - {formatTime(currentTime)} / {formatTime(duration)}
+              của đề xuất · {formatTime(currentTime)} / {formatTime(duration)}
             </span>
 
-            {/* Box Vote Bỏ Qua y chang ảnh */}
+            {/* Box Vote Bỏ Qua */}
             <div className="mt-2 flex flex-col gap-1">
               <button
                 onClick={handleVoteSkip}
@@ -358,12 +378,11 @@ export default function App() {
               </button>
 
               <div className="text-[10px] text-[#8e9c80] pl-0.5">
-                <span>{roomState.skipVotesCount}/{roomState.totalUsers} người thật đồng ý - {skipPercent}%</span>
+                <span>{roomState.skipVotesCount}/{roomState.totalUsers} người thật đồng ý · {skipPercent}%</span>
                 <br />
                 <span>Đủ 35% thì chuyển bài</span>
               </div>
 
-              {/* Progress bar màu vàng chanh */}
               <div className="w-36 h-1 bg-[#232b25] rounded-full overflow-hidden mt-0.5">
                 <div
                   className="h-full bg-[#d8ef82] transition-all duration-300"
@@ -387,13 +406,12 @@ export default function App() {
           </div>
           <span className="text-white/20">|</span>
           <span className="text-[11px] font-mono text-[#8e9c80]">
-            69 / 100 ghế
+            63 / 100 ghế
           </span>
         </div>
 
         {/* Góc trên bên phải: Tiền & Icon controls */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          {/* Pill tiền */}
           <div className="bg-[#131715]/90 border border-[#d6e5c6]/15 rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs text-[#d8ef82] font-mono font-bold shadow-md">
             <span>💼</span>
             <span>168.000đ</span>
@@ -416,7 +434,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setIsProfileModalOpen(true)}
+            onClick={() => setIsWardrobeOpen(true)}
             className="w-8 h-8 rounded-xl bg-[#131715]/90 hover:bg-[#1c221e] border border-[#d6e5c6]/15 flex items-center justify-center text-[#cad6bb] hover:text-white transition-all"
             title="Cài đặt"
           >
@@ -431,9 +449,8 @@ export default function App() {
             {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
           </button>
 
-          {/* Avatar tròn A */}
           <button
-            onClick={() => setIsProfileModalOpen(true)}
+            onClick={() => setIsWardrobeOpen(true)}
             className="w-8 h-8 rounded-full bg-[#d8ef82]/25 border border-[#d8ef82] flex items-center justify-center text-[#d8ef82] font-bold text-xs shadow-md"
           >
             A
@@ -441,14 +458,17 @@ export default function App() {
         </div>
       </header>
 
-      {/* 5. CỘT MENU DỌC BÊN PHẢI (VERTICAL SIDEBAR DOCK Y CHANG SCREENSHOT) */}
+      {/* 5. CỘT MENU DỌC BÊN PHẢI (VERTICAL SIDEBAR DOCK KẾT NỐI TOÀN BỘ TÍNH NĂNG) */}
       <aside className="absolute right-4 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center bg-[#101412]/92 backdrop-blur-xl border border-[#d6e5c6]/15 rounded-2xl py-2 px-1.5 shadow-2xl gap-1">
         <button className="p-1 text-[#8e9c80] hover:text-white transition-colors">
           <ChevronUp size={16} />
         </button>
 
         {/* Hộp thư */}
-        <button className="relative flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group">
+        <button
+          onClick={() => alert('Hộp thư: Bạn nhận được 1 thông báo chào mừng vào rạp!')}
+          className="relative flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group"
+        >
           <Mail size={16} />
           <span className="text-[9px] mt-1 text-[#8e9c80] group-hover:text-[#cad6bb]">Hộp thư</span>
           <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-rose-600 text-white text-[8px] font-bold flex items-center justify-center">
@@ -458,7 +478,7 @@ export default function App() {
 
         {/* Gửi video */}
         <button
-          onClick={() => setIsQueueModalOpen(true)}
+          onClick={() => setIsSendVideoOpen(true)}
           className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group"
         >
           <Plus size={16} />
@@ -466,14 +486,17 @@ export default function App() {
         </button>
 
         {/* Chiếu ảnh */}
-        <button className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group">
+        <button
+          onClick={() => setIsPostPhotoOpen(true)}
+          className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group"
+        >
           <ImageIcon size={16} />
           <span className="text-[9px] mt-1 text-[#8e9c80] group-hover:text-[#cad6bb]">Chiếu ảnh</span>
         </button>
 
         {/* Hàng chờ */}
         <button
-          onClick={() => setIsQueueModalOpen(true)}
+          onClick={() => setIsQueueOpen(true)}
           className="relative flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group"
         >
           <ListOrdered size={16} />
@@ -491,19 +514,30 @@ export default function App() {
           <MessageSquare size={16} />
           <span className="text-[9px] mt-1 text-[#8e9c80] group-hover:text-[#cad6bb]">Trò chuyện</span>
           <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-rose-600 text-white text-[8px] font-bold flex items-center justify-center">
-            5
+            23
           </span>
         </button>
 
-        {/* Tương tác */}
-        <button className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group">
+        {/* Tương tác (Lên sân khấu / Thả pháo hoa) */}
+        <button
+          onClick={() => {
+            setIsStandingOnStage(!isStandingOnStage);
+            confetti({ particleCount: 40, spread: 70, origin: { y: 0.8 } });
+          }}
+          className={`flex flex-col items-center p-2 rounded-xl transition-all group ${
+            isStandingOnStage ? 'bg-[#d8ef82]/20 text-[#d8ef82]' : 'hover:bg-white/5 text-[#cad6bb]'
+          }`}
+          title={isStandingOnStage ? 'Xuống chỗ ngồi' : 'Bước lên sân khấu'}
+        >
           <Sparkles size={16} className="text-[#d8ef82]" />
-          <span className="text-[9px] mt-1 text-[#8e9c80] group-hover:text-[#cad6bb]">Tương tác</span>
+          <span className="text-[9px] mt-1 text-[#8e9c80] group-hover:text-[#cad6bb]">
+            {isStandingOnStage ? 'Về chỗ' : 'Lên bục'}
+          </span>
         </button>
 
         {/* Tủ đồ */}
         <button
-          onClick={() => setIsProfileModalOpen(true)}
+          onClick={() => setIsWardrobeOpen(true)}
           className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group"
         >
           <Shirt size={16} />
@@ -511,33 +545,50 @@ export default function App() {
         </button>
 
         {/* Ủng hộ */}
-        <button className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group">
+        <button
+          onClick={() => setIsSupportOpen(true)}
+          className="flex flex-col items-center p-2 rounded-xl hover:bg-white/5 text-[#cad6bb] transition-all group"
+        >
           <Heart size={16} className="text-rose-400" />
           <span className="text-[9px] mt-1 text-[#8e9c80] group-hover:text-[#cad6bb]">Ủng hộ</span>
         </button>
       </aside>
 
-      {/* 6. THANH BOTTOM BAR (ĐÁY MÀN HÌNH Y CHANG SCREENSHOT) */}
+      {/* 6. THANH BOTTOM BAR (ĐÁY MÀN HÌNH) */}
       <footer className="absolute bottom-4 inset-x-5 z-30 flex items-center justify-between pointer-events-none">
-        {/* Góc trái đáy: 4 Icon nhỏ + Nút Phòng riêng */}
+        {/* Góc trái đáy */}
         <div className="flex items-center gap-2 pointer-events-auto">
           <div className="flex items-center gap-1 bg-[#101412]/80 backdrop-blur-md border border-[#d6e5c6]/15 rounded-xl p-1">
-            <button className="p-1.5 text-[#8e9c80] hover:text-white rounded-lg hover:bg-white/5" title="Toàn màn hình">
+            <button
+              onClick={toggleFullscreen}
+              className="p-1.5 text-[#8e9c80] hover:text-white rounded-lg hover:bg-white/5"
+              title="Toàn màn hình"
+            >
               <Maximize size={15} />
             </button>
-            <button className="p-1.5 text-[#8e9c80] hover:text-white rounded-lg hover:bg-white/5" title="Sơ đồ ghế">
+            <button
+              onClick={() => setIsStandingOnStage(!isStandingOnStage)}
+              className={`p-1.5 rounded-lg hover:bg-white/5 transition-colors ${
+                isStandingOnStage ? 'text-[#d8ef82]' : 'text-[#8e9c80]'
+              }`}
+              title={isStandingOnStage ? 'Về ghế ngồi' : 'Lên sân khấu'}
+            >
               <span>💺</span>
             </button>
             <button className="p-1.5 text-[#8e9c80] hover:text-white rounded-lg hover:bg-white/5" title="Màn hình">
               <span>🖥️</span>
             </button>
-            <button className="p-1.5 text-[#8e9c80] hover:text-white rounded-lg hover:bg-white/5" title="Khán giả">
+            <button
+              onClick={() => setIsWardrobeOpen(true)}
+              className="p-1.5 text-[#8e9c80] hover:text-white rounded-lg hover:bg-white/5"
+              title="Khán giả"
+            >
               <Users size={15} />
             </button>
           </div>
 
           <button
-            onClick={handleCopyLink}
+            onClick={() => setIsPrivateRoomsOpen(true)}
             className="flex items-center gap-2 bg-[#121813]/90 hover:bg-[#18221a] border border-[#d8ef82]/30 px-3.5 py-2 rounded-xl text-xs font-bold text-[#d8ef82] transition-all shadow-md"
           >
             <DoorOpen size={16} />
@@ -545,7 +596,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* Ở giữa: Khung Chat Con Nhộng bo tròn chuẩn wetube ciné */}
+        {/* Ở giữa: Khung Chat Con Nhộng */}
         <form
           onSubmit={handleSendChat}
           className="pointer-events-auto flex items-center gap-2 bg-[#101412]/90 backdrop-blur-xl border border-[#d6e5c6]/20 rounded-full px-4 py-2 w-full max-w-lg shadow-2xl focus-within:border-[#d8ef82] transition-colors"
@@ -572,7 +623,7 @@ export default function App() {
           </button>
         </form>
 
-        {/* Góc phải đáy: Icon tai nghe + Icon Loa + Thanh trượt âm lượng + 100% */}
+        {/* Góc phải đáy */}
         <div className="flex items-center gap-2.5 pointer-events-auto bg-[#101412]/80 backdrop-blur-md border border-[#d6e5c6]/15 rounded-xl px-3 py-1.5">
           <button className="text-[#8e9c80] hover:text-white" title="Nghe âm thanh">
             <Headphones size={15} />
@@ -600,13 +651,19 @@ export default function App() {
         </div>
       </footer>
 
-      {/* POPUP MODALS */}
+      {/* 7. POPUP MODALS & DRAWERS HOÀN THIỆN ĐẦY ĐỦ */}
+      <SendVideoModal
+        isOpen={isSendVideoOpen}
+        onClose={() => setIsSendVideoOpen(false)}
+        onAddVideo={handleAddVideo}
+      />
+
       <QueueModal
-        isOpen={isQueueModalOpen}
-        onClose={() => setIsQueueModalOpen(false)}
+        isOpen={isQueueOpen}
+        onClose={() => setIsQueueOpen(false)}
         queue={roomState.queue}
         currentVideo={roomState.currentVideo}
-        onAddVideo={(url, playNow) => socket?.emit('add-video', { url, playNow })}
+        onAddVideo={handleAddVideo}
         onRemoveFromQueue={(index) => socket?.emit('remove-from-queue', { index })}
         onVoteSkip={handleVoteSkip}
         skipVotesCount={roomState.skipVotesCount}
@@ -614,16 +671,46 @@ export default function App() {
         totalUsers={roomState.totalUsers}
       />
 
-      <ProfileModal
-        isOpen={isProfileModalOpen}
-        initialProfile={profile}
-        onSave={(newProf) => {
+      {/* Drawer Trò chuyện */}
+      {isChatOpen && (
+        <div className="fixed inset-y-0 right-16 z-50 w-80 p-3 animate-pop-in">
+          <ChatBox
+            messages={roomState.chat}
+            onSendMessage={(text) => socket?.emit('send-message', { text })}
+            onSendReaction={(emoji) => socket?.emit('send-reaction', { emoji })}
+            currentUserId={socket?.id}
+            onClose={() => setIsChatOpen(false)}
+          />
+        </div>
+      )}
+
+      <WardrobeModal
+        isOpen={isWardrobeOpen}
+        onClose={() => setIsWardrobeOpen(false)}
+        currentProfile={profile}
+        onSaveProfile={(newProf) => {
           setProfile(newProf);
           localStorage.setItem('wetube_profile', JSON.stringify(newProf));
-          setIsProfileModalOpen(false);
           socket?.emit('join-room', { roomId, ...newProf });
         }}
-        onClose={() => setIsProfileModalOpen(false)}
+      />
+
+      <PrivateRoomsModal
+        isOpen={isPrivateRoomsOpen}
+        onClose={() => setIsPrivateRoomsOpen(false)}
+        onJoinRoom={(newRoom) => {
+          window.location.search = `?room=${newRoom}`;
+        }}
+      />
+
+      <PostPhotoModal
+        isOpen={isPostPhotoOpen}
+        onClose={() => setIsPostPhotoOpen(false)}
+      />
+
+      <SupportModal
+        isOpen={isSupportOpen}
+        onClose={() => setIsSupportOpen(false)}
       />
     </div>
   );
