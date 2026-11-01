@@ -77,11 +77,11 @@ export class RoomManager {
         users: new Map(), // socketId -> user
         seats: createDefaultSeats(),
         currentVideo: {
-          id: '5qap5aO4i9A', // Lofi hip hop radio mặc định
-          title: 'lofi hip hop radio - beats to relax/study to',
-          author: 'Lofi Girl',
-          thumbnail: 'https://img.youtube.com/vi/5qap5aO4i9A/hqdefault.jpg',
-          url: 'https://www.youtube.com/watch?v=5qap5aO4i9A',
+          id: 'JGwWNGJdvx8',
+          title: 'Ed Sheeran - Shape of You (Official Music Video)',
+          author: 'Ed Sheeran',
+          thumbnail: 'https://img.youtube.com/vi/JGwWNGJdvx8/hqdefault.jpg',
+          url: 'https://www.youtube.com/watch?v=JGwWNGJdvx8',
           addedBy: 'WETUBE CINÉ',
         },
         playback: {

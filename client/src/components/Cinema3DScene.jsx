@@ -138,11 +138,12 @@ export default function Cinema3DScene({
     createBox(sceneGL, 0, 0.1, -7, 29, 0.4, 6, getMat('#282727'));
     createBox(sceneGL, 0, 0.34, -6, 25, 0.05, 0.06, getBasicMat('#b0804f'));
 
-    // 4. TƯỜNG SAU (Cắt rỗng khu vực màn chiếu để YouTube xuyên qua)
-    createBox(sceneGL, 0, 15.9, -12, 30, 4.2, 0.5, getMat('#191b1b'));
-    createBox(sceneGL, 0, 0.95, -12, 30, 2.1, 0.5, getMat('#191b1b'));
-    createBox(sceneGL, -12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));
-    createBox(sceneGL, 12.8, 7.9, -12, 4.4, 12.0, 0.5, getMat('#191b1b'));
+    // 4. TƯỜNG SAU (FRONT WALL) - Cắt rỗng rộng rãi để không che bất kỳ pixel nào của màn hình
+    // Màn hình ở: [-10.8, 10.8] x [1.925, 14.075] -> Ô trống: [-11.2, 11.2] x [1.6, 14.4]
+    createBox(sceneGL, 0, 16.2, -12, 30, 3.6, 0.5, getMat('#191b1b'));       // Tường trên
+    createBox(sceneGL, 0, 0.8, -12, 30, 1.6, 0.5, getMat('#191b1b'));        // Tường dưới chân bục
+    createBox(sceneGL, -13.1, 8.0, -12, 3.8, 12.8, 0.5, getMat('#191b1b'));   // Tường bên trái
+    createBox(sceneGL, 13.1, 8.0, -12, 3.8, 12.8, 0.5, getMat('#191b1b'));    // Tường bên phải
 
     // 5. HAI BỨC TƯỜNG BÊN TRÁI VÀ PHẢI VỚI ĐÈN RỌI VÀ SỌC LED
     for (const e of [-15, 15]) {
@@ -172,18 +173,21 @@ export default function Cinema3DScene({
       }
     }
 
-    // 7. KHUNG VIỀN MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC (Rỗng tâm)
-    createBox(sceneGL, 0, 13.92, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d'));
-    createBox(sceneGL, 0, 1.88, -10.45, 21.5, 0.15, 0.1, getBasicMat('#6b725d'));
-    createBox(sceneGL, -10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d'));
-    createBox(sceneGL, 10.7, 7.9, -10.45, 0.15, 12.2, 0.1, getBasicMat('#6b725d'));
+    // 7. KHUNG VIỀN MÀN HÌNH CHIẾU CHUẨN KÍCH THƯỚC (Ô mở rộng, tuyệt đối không đè cắt video)
+    // Màn hình 16:9 ở giữa: Rộng 21.6, Cao 12.15, Tâm (0, 8.0, -10.45)
+    // Viền trong màu xanh cốm matcha (#8ea862)
+    createBox(sceneGL, 0, 14.18, -10.46, 21.96, 0.18, 0.02, getBasicMat('#8ea862')); // Cạnh trên
+    createBox(sceneGL, 0, 1.82, -10.46, 21.96, 0.18, 0.02, getBasicMat('#8ea862'));  // Cạnh dưới
+    createBox(sceneGL, -10.89, 8.0, -10.46, 0.18, 12.54, 0.02, getBasicMat('#8ea862')); // Cạnh trái
+    createBox(sceneGL, 10.89, 8.0, -10.46, 0.18, 12.54, 0.02, getBasicMat('#8ea862'));  // Cạnh phải
 
-    createBox(sceneGL, 0, 14.17, -10.48, 22.2, 0.35, 0.16, getMat('#0c0d0d'));
-    createBox(sceneGL, 0, 1.63, -10.48, 22.2, 0.35, 0.16, getMat('#0c0d0d'));
-    createBox(sceneGL, -10.95, 7.9, -10.48, 0.35, 12.7, 0.16, getMat('#0c0d0d'));
-    createBox(sceneGL, 10.95, 7.9, -10.48, 0.35, 12.7, 0.16, getMat('#0c0d0d'));
+    // Viền ngoài màu đen đậm rạp chiếu (#0a0c0c)
+    createBox(sceneGL, 0, 14.47, -10.48, 22.76, 0.4, 0.04, getMat('#0a0c0c'));
+    createBox(sceneGL, 0, 1.53, -10.48, 22.76, 0.4, 0.04, getMat('#0a0c0c'));
+    createBox(sceneGL, -11.18, 8.0, -10.48, 0.4, 13.34, 0.04, getMat('#0a0c0c'));
+    createBox(sceneGL, 11.18, 8.0, -10.48, 0.4, 13.34, 0.04, getMat('#0a0c0c'));
 
-    // Bảng chữ nổi W E T U B E   C I N É
+    // Bảng chữ nổi W E T U B E   C I N É (Đặt ở vách bục sân khấu, hoàn toàn dưới chân màn hình)
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 512;
     labelCanvas.height = 128;
@@ -196,16 +200,16 @@ export default function Cinema3DScene({
     lctx.textBaseline = 'middle';
     lctx.fillText('W E T U B E   C I N É', 256, 64);
     const labelTex = new THREE.CanvasTexture(labelCanvas);
-    const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.65), new THREE.MeshBasicMaterial({ map: labelTex }));
-    labelMesh.position.set(0, 1.05, -9.9);
+    const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.55), new THREE.MeshBasicMaterial({ map: labelTex }));
+    labelMesh.position.set(0, 0.85, -9.9);
     sceneGL.add(labelMesh);
 
     // =================================================================
-    // 8. MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT)
+    // 8. MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT) CHUẨN TỶ LỆ 16:9
     // =================================================================
     const screenWidth = 1280;
     const screenHeight = 720;
-    const screenScale = 21.25 / 1280;
+    const screenScale = 21.6 / 1280; // Chiều rộng 21.6, Chiều cao đúng 12.15 chuẩn 16:9
 
     const iframeDiv = document.createElement('div');
     iframeDiv.style.width = `${screenWidth}px`;
@@ -216,7 +220,7 @@ export default function Cinema3DScene({
     iframeDiv.innerHTML = '<div id="yt-exact-screen" style="width: 100%; height: 100%;"></div>';
 
     const cssScreen = new CSS3DObject(iframeDiv);
-    cssScreen.position.set(0, 7.9, -10.45);
+    cssScreen.position.set(0, 8.0, -10.45);
     cssScreen.scale.set(screenScale, screenScale, screenScale);
     sceneCSS.add(cssScreen);
 
@@ -376,16 +380,6 @@ export default function Cinema3DScene({
         hair.rotation.x = -Math.PI / 2;
         hair.position.set(0, 2.02, 0);
         g.add(hair);
-
-        // Name tag trên đầu
-        const isMe = (u.id === currentUserId || u.id === 'me');
-        const displayName = isMe ? `${u.nickname || 'Bạn'} (Bạn)` : (u.nickname || 'Khán giả');
-        const tag = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.9, 0.23),
-          new THREE.MeshBasicMaterial({ map: createNameTagTexture(displayName, isMe), transparent: true })
-        );
-        tag.position.set(0, 2.5, 0);
-        g.add(tag);
 
         audienceGroup.add(g);
         activeStageGuys.push(g);
