@@ -187,7 +187,7 @@ export default function Cinema3DScene({
     createBox(sceneGL, -11.18, 8.0, -10.48, 0.4, 13.34, 0.04, getMat('#0a0c0c'));
     createBox(sceneGL, 11.18, 8.0, -10.48, 0.4, 13.34, 0.04, getMat('#0a0c0c'));
 
-    // Bảng chữ nổi W E T U B E   C I N É (Đặt ở vách bục sân khấu, hoàn toàn dưới chân màn hình)
+    // Bảng chữ nổi 8 6   C I N E M A (Đặt ở vách bục sân khấu, hoàn toàn dưới chân màn hình)
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 512;
     labelCanvas.height = 128;
@@ -198,7 +198,7 @@ export default function Cinema3DScene({
     lctx.font = '700 48px Arial';
     lctx.textAlign = 'center';
     lctx.textBaseline = 'middle';
-    lctx.fillText('W E T U B E   C I N É', 256, 64);
+    lctx.fillText('8 6   C I N E M A', 256, 64);
     const labelTex = new THREE.CanvasTexture(labelCanvas);
     const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.55), new THREE.MeshBasicMaterial({ map: labelTex }));
     labelMesh.position.set(0, 0.85, -9.9);
@@ -615,17 +615,21 @@ export default function Cinema3DScene({
         playerRef.current = new window.YT.Player('yt-exact-screen', {
           height: '100%',
           width: '100%',
-          videoId: video ? video.id : '5qap5aO4i9A',
+          videoId: video ? video.id : 'JGwWNGJdvx8',
           playerVars: {
             autoplay: 1,
-            controls: 1,
+            controls: 0, // TẮT HẲN DẤU PAUSE VÀ THANH PROGRESS BAR CỦA YOUTUBE
+            disablekb: 1,
+            fs: 0,
             modestbranding: 1,
             rel: 0,
+            iv_load_policy: 3,
+            playsinline: 1,
             origin: window.location.origin,
           },
           events: {
             onReady: (event) => {
-              if (video?.id && video.id !== '5qap5aO4i9A') {
+              if (video?.id && video.id !== 'JGwWNGJdvx8') {
                 event.target.loadVideoById({
                   videoId: video.id,
                   startSeconds: playback?.currentTime || 0,

@@ -490,12 +490,12 @@ export default function App() {
         {/* Góc trên bên trái: Logo + Tên bài hát + Box Vote skip */}
         <div className="flex flex-col gap-4 pointer-events-auto max-w-sm">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#e11d48] flex items-center justify-center text-white font-extrabold text-base shadow-lg shadow-rose-600/30">
-              w
+            <div className="w-8 h-8 rounded-xl bg-[#e11d48] flex items-center justify-center text-white font-black text-sm tracking-tight shadow-lg shadow-rose-600/30">
+              86
             </div>
             <div className="flex flex-col">
               <span className="text-base font-bold text-white tracking-tight lowercase">
-                wetube <span className="font-extrabold">ciné</span>
+                86 <span className="font-extrabold">cinema</span>
               </span>
               <span className="text-[9px] font-mono text-[#8e9c80] uppercase tracking-wider">
                 PHIM / NGHE NHẠC / {roomId}

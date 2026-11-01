@@ -82,7 +82,7 @@ export class RoomManager {
           author: 'Ed Sheeran',
           thumbnail: 'https://img.youtube.com/vi/JGwWNGJdvx8/hqdefault.jpg',
           url: 'https://www.youtube.com/watch?v=JGwWNGJdvx8',
-          addedBy: 'WETUBE CINÉ',
+          addedBy: '86 Cinema',
         },
         playback: {
           isPlaying: true,

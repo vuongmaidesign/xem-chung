@@ -331,5 +331,5 @@ if (fs.existsSync(clientDist)) {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`🎬 WETUBE CINÉ Server running on http://localhost:${PORT}`);
+  console.log(`🎬 86 Cinema Server running on http://localhost:${PORT}`);
 });
