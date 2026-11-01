@@ -233,36 +233,114 @@ export default function App() {
   }, [roomId, isStandingOnStage]);
 
   const handleSyncAction = (action, time) => {
-    if (socket) {
+    if (socket && socket.connected) {
       socket.emit('sync-action', { action, time });
     }
   };
 
   const handleVideoEnded = () => {
-    if (socket) {
+    if (socket && socket.connected) {
       socket.emit('video-ended');
+    } else {
+      // Tự động chuyển bài hoặc lặp lại full trên web tĩnh GitHub Pages
+      if (roomState.queue.length > 0) {
+        const next = roomState.queue[0];
+        setRoomState((prev) => ({
+          ...prev,
+          currentVideo: next,
+          queue: prev.queue.slice(1),
+          playback: { isPlaying: true, currentTime: 0 },
+        }));
+      } else {
+        setRoomState((prev) => ({
+          ...prev,
+          playback: { isPlaying: true, currentTime: 0 },
+        }));
+      }
     }
   };
 
   const handleVoteSkip = () => {
-    if (socket) {
+    if (socket && socket.connected) {
       socket.emit('vote-skip');
+    } else {
+      if (roomState.queue.length > 0) {
+        const next = roomState.queue[0];
+        setRoomState((prev) => ({
+          ...prev,
+          currentVideo: next,
+          queue: prev.queue.slice(1),
+          playback: { isPlaying: true, currentTime: 0 },
+        }));
+      } else {
+        setRoomState((prev) => ({
+          ...prev,
+          playback: { isPlaying: true, currentTime: 0 },
+        }));
+      }
     }
   };
 
   const handleSendChat = (e) => {
     e?.preventDefault();
     if (!chatInput.trim()) return;
+    const text = chatInput.trim();
 
-    if (socket) {
-      socket.emit('send-message', { text: chatInput.trim() });
+    if (socket && socket.connected) {
+      socket.emit('send-message', { text });
+    } else {
+      // Fallback local chat khi truy cập từ GitHub Pages
+      const msg = {
+        id: Date.now(),
+        text,
+        nickname: profile.nickname || 'Bạn',
+        avatar: profile.avatar || '🍿',
+      };
+      setRoomState((prev) => ({ ...prev, chat: [...prev.chat, msg] }));
+
+      const posX = isStandingOnStage ? 50 : Math.floor(Math.random() * 36) + 32;
+      const posY = isStandingOnStage ? 55 : Math.floor(Math.random() * 18) + 68;
+      const newBubble = { id: Date.now(), text, x: posX, y: posY };
+      setFloatingBubbles((prev) => [...prev, newBubble]);
+      setTimeout(() => {
+        setFloatingBubbles((prev) => prev.filter((b) => b.id !== newBubble.id));
+      }, 5500);
     }
     setChatInput('');
   };
 
   const handleAddVideo = (url, playNow) => {
-    if (socket) {
+    if (socket && socket.connected) {
       socket.emit('add-video', { url, playNow });
+    } else {
+      // Fallback local khi truy cập từ GitHub Pages
+      let videoId = '';
+      const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/\s]{11})/);
+      if (match && match[1]) videoId = match[1];
+      else if (/^[a-zA-Z0-9_-]{11}$/.test(url.trim())) videoId = url.trim();
+
+      if (videoId) {
+        const newVid = {
+          id: videoId,
+          title: `Video YouTube (${videoId})`,
+          author: 'Bạn gửi',
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+          duration: 3600,
+        };
+        if (playNow || !roomState.currentVideo) {
+          setRoomState((prev) => ({
+            ...prev,
+            currentVideo: newVid,
+            playback: { isPlaying: true, currentTime: 0 },
+          }));
+        } else {
+          setRoomState((prev) => ({
+            ...prev,
+            queue: [...prev.queue, newVid],
+          }));
+        }
+      }
     }
   };
 
