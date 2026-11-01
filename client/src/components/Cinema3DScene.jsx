@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
-// Danh sách tên ngẫu nhiên cho các khán giả bot ngồi rạp như screenshot
 const DEFAULT_NAMES = [
   'Truong son', 'MCK', 'Quang', 'Phu', 'habesocki',
   '12345', 'thich xac cuc', 'Hồng Sơn', 'Minh Vũ', 'Thu Thảo',
@@ -10,26 +10,32 @@ const DEFAULT_NAMES = [
 ];
 
 export default function Cinema3DScene({
-  seats = [],
-  users = [],
-  currentUserId,
-  onSelectSeat,
+  video,
+  playback,
+  volume = 100,
+  isMuted = false,
+  onSyncAction,
+  onVideoEnded,
   isStandingOnStage = false,
-  myProfile,
 }) {
-  const mountRef = useRef(null);
-  const stageCharactersRef = useRef([]);
+  const containerRef = useRef(null);
+  const playerRef = useRef(null);
+  const isSyncingRef = useRef(false);
+  const suppressSyncUntilRef = useRef(0);
+  const currentVideoIdRef = useRef(video?.id);
 
   useEffect(() => {
-    const container = mountRef.current;
+    const container = containerRef.current;
     if (!container) return;
 
-    // Scene
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0e1012);
-    scene.fog = new THREE.FogExp2(0x0e1012, 0.022);
+    // SCENES: Scene WebGL (chứa người, ghế, tường) & Scene CSS3D (chứa YouTube iframe)
+    const sceneGL = new THREE.Scene();
+    sceneGL.background = new THREE.Color(0x0a0c0e);
+    sceneGL.fog = new THREE.FogExp2(0x0a0c0e, 0.02);
 
-    // Camera - Góc nhìn từ trên cao xuống bao quát toàn rạp y hệt screenshot
+    const sceneCSS = new THREE.Scene();
+
+    // CAMERA chung
     const camera = new THREE.PerspectiveCamera(
       46,
       container.clientWidth / container.clientHeight,
@@ -37,31 +43,47 @@ export default function Cinema3DScene({
       100
     );
     camera.position.set(0, 5.7, 8.6);
-    camera.lookAt(0, 1.3, -1.6);
+    camera.lookAt(0, 1.4, -1.6);
 
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
+    // 1. RENDERER CSS3D (Nằm ở layer dưới, hiển thị iframe YouTube 3D)
+    const rendererCSS = new CSS3DRenderer();
+    rendererCSS.setSize(container.clientWidth, container.clientHeight);
+    rendererCSS.domElement.style.position = 'absolute';
+    rendererCSS.domElement.style.top = '0';
+    rendererCSS.domElement.style.left = '0';
+    rendererCSS.domElement.style.width = '100%';
+    rendererCSS.domElement.style.height = '100%';
+    rendererCSS.domElement.style.zIndex = '1';
+    container.appendChild(rendererCSS.domElement);
+
+    // 2. RENDERER WebGL (Nằm ở layer trên, nền trong suốt alpha: true, vẽ người & ghế đè lên màn hình)
+    const rendererGL = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    rendererGL.setSize(container.clientWidth, container.clientHeight);
+    rendererGL.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    rendererGL.domElement.style.position = 'absolute';
+    rendererGL.domElement.style.top = '0';
+    rendererGL.domElement.style.left = '0';
+    rendererGL.domElement.style.width = '100%';
+    rendererGL.domElement.style.height = '100%';
+    rendererGL.domElement.style.zIndex = '2';
+    rendererGL.domElement.style.pointerEvents = 'none'; // Sự kiện chuột click xuyên qua để bấm player nếu cần
+    container.appendChild(rendererGL.domElement);
 
     // Ánh sáng (Lights)
-    const ambientLight = new THREE.AmbientLight(0x28302c, 1.3);
-    scene.add(ambientLight);
+    const ambientLight = new THREE.AmbientLight(0x38423c, 1.4);
+    sceneGL.add(ambientLight);
 
-    const screenLight = new THREE.PointLight(0xe2f8b5, 2.2, 16);
+    const screenLight = new THREE.PointLight(0xe2f8b5, 2.5, 18);
     screenLight.position.set(0, 2.8, -2.5);
-    scene.add(screenLight);
+    sceneGL.add(screenLight);
 
-    const warmLightL = new THREE.PointLight(0xffdfa0, 1.6, 14);
+    const warmLightL = new THREE.PointLight(0xffdfa0, 1.8, 15);
     warmLightL.position.set(-5.5, 4, 1.5);
-    scene.add(warmLightL);
+    sceneGL.add(warmLightL);
 
-    const warmLightR = new THREE.PointLight(0xffdfa0, 1.6, 14);
+    const warmLightR = new THREE.PointLight(0xffdfa0, 1.8, 15);
     warmLightR.position.set(5.5, 4, 1.5);
-    scene.add(warmLightR);
+    sceneGL.add(warmLightR);
 
     // Sàn rạp (Floor)
     const floorGeo = new THREE.PlaneGeometry(32, 32);
@@ -73,15 +95,14 @@ export default function Cinema3DScene({
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.5;
-    floor.receiveShadow = true;
-    scene.add(floor);
+    sceneGL.add(floor);
 
-    // Tường trước (Front Wall)
+    // Tường trước (Front Wall) nằm phía sau màn hình
     const wallFrontGeo = new THREE.PlaneGeometry(32, 16);
     const wallFrontMat = new THREE.MeshStandardMaterial({ color: 0x131517, roughness: 0.9 });
     const wallFront = new THREE.Mesh(wallFrontGeo, wallFrontMat);
-    wallFront.position.set(0, 6, -5.5);
-    scene.add(wallFront);
+    wallFront.position.set(0, 6, -5.6);
+    sceneGL.add(wallFront);
 
     // Tường trái & Tường phải
     const wallSideGeo = new THREE.PlaneGeometry(32, 16);
@@ -90,14 +111,14 @@ export default function Cinema3DScene({
     const wallLeft = new THREE.Mesh(wallSideGeo, wallSideMat);
     wallLeft.rotation.y = Math.PI / 2;
     wallLeft.position.set(-7.5, 6, 2);
-    scene.add(wallLeft);
+    sceneGL.add(wallLeft);
 
     const wallRight = new THREE.Mesh(wallSideGeo, wallSideMat);
     wallRight.rotation.y = -Math.PI / 2;
     wallRight.position.set(7.5, 6, 2);
-    scene.add(wallRight);
+    sceneGL.add(wallRight);
 
-    // Dải đèn LED sọc đứng 2 bên tường
+    // Đèn sọc LED 2 bên tường
     const stripGeo = new THREE.BoxGeometry(0.08, 3.2, 0.08);
     const stripMat = new THREE.MeshBasicMaterial({ color: 0xffdf88 });
     const lampGeo = new THREE.CylinderGeometry(0.12, 0.16, 0.25, 16);
@@ -107,20 +128,20 @@ export default function Cinema3DScene({
       const stripL = new THREE.Mesh(stripGeo, stripMat);
       stripL.position.set(-7.4, 2.8, z);
       stripL.rotation.z = 0.08;
-      scene.add(stripL);
+      sceneGL.add(stripL);
 
       const lampL = new THREE.Mesh(lampGeo, lampMat);
       lampL.position.set(-7.35, 4.4, z);
-      scene.add(lampL);
+      sceneGL.add(lampL);
 
       const stripR = new THREE.Mesh(stripGeo, stripMat);
       stripR.position.set(7.4, 2.8, z);
       stripR.rotation.z = -0.08;
-      scene.add(stripR);
+      sceneGL.add(stripR);
 
       const lampR = new THREE.Mesh(lampGeo, lampMat);
       lampR.position.set(7.35, 4.4, z);
-      scene.add(lampR);
+      sceneGL.add(lampR);
     });
 
     // Quả cầu disco trên trần
@@ -132,9 +153,9 @@ export default function Cinema3DScene({
     });
     const discoBall = new THREE.Mesh(discoGeo, discoMat);
     discoBall.position.set(0, 5.2, -1.8);
-    scene.add(discoBall);
+    sceneGL.add(discoBall);
 
-    // 2 Thùng loa cây đứng 2 bên màn hình (Sound Towers)
+    // Loa cây đứng 2 bên màn hình
     const speakerGeo = new THREE.BoxGeometry(0.85, 3.4, 0.85);
     const speakerMat = new THREE.MeshStandardMaterial({ color: 0x181a1c, roughness: 0.7 });
     const coneGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.05, 16);
@@ -143,51 +164,92 @@ export default function Cinema3DScene({
     [-4.7, 4.7].forEach((x) => {
       const spk = new THREE.Mesh(speakerGeo, speakerMat);
       spk.position.set(x, 1.7, -4.8);
-      scene.add(spk);
+      sceneGL.add(spk);
 
       [0.85, 1.7, 2.55].forEach((y) => {
         const cone = new THREE.Mesh(coneGeo, coneMat);
         cone.rotation.x = Math.PI / 2;
         cone.position.set(x, y, -4.37);
-        scene.add(cone);
+        sceneGL.add(cone);
       });
     });
 
-    // Bục sân khấu (Stage) phía trước màn hình
+    // =================================================================
+    // MÀN HÌNH YOUTUBE 3D (CSS3DOBJECT) NẰM TRÊN TƯỜNG SAU (z = -5.0)
+    // =================================================================
+    const screenWidth = 1280;
+    const screenHeight = 720;
+    const screenScale = 0.0062; // 1280 * 0.0062 = ~7.9 đơn vị Three.js
+
+    const iframeDiv = document.createElement('div');
+    iframeDiv.style.width = `${screenWidth}px`;
+    iframeDiv.style.height = `${screenHeight}px`;
+    iframeDiv.style.background = '#000';
+    iframeDiv.style.border = '14px solid #080808';
+    iframeDiv.style.boxSizing = 'border-box';
+    iframeDiv.innerHTML = '<div id="yt-3d-screen" style="width: 100%; height: 100%;"></div>';
+
+    const cssScreenObject = new CSS3DObject(iframeDiv);
+    cssScreenObject.position.set(0, 2.55, -5.0);
+    cssScreenObject.scale.set(screenScale, screenScale, screenScale);
+    sceneCSS.add(cssScreenObject);
+
+    // KỸ THUẬT MASKING TRONG WEBL:
+    // Tạo 1 Mesh có kích thước bằng màn hình, colorWrite = false để ghi Depth Buffer.
+    // Nhờ đó, bất kỳ vật thể WebGL nào (người, ghế, bục) ở z > -5.0 SẼ ĐƯỢC VẼ ĐÈ LÊN MÀN HÌNH YOUTUBE!
+    const maskGeo = new THREE.PlaneGeometry(screenWidth * screenScale, screenHeight * screenScale);
+    const maskMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    maskMat.colorWrite = false; // Không vẽ màu (để lộ iframe CSS3D bên dưới)
+    const maskMesh = new THREE.Mesh(maskGeo, maskMat);
+    maskMesh.position.set(0, 2.55, -5.0);
+    sceneGL.add(maskMesh);
+
+    // Bảng chữ nổi WETUBE CINÉ ở chân màn hình
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 512;
+    labelCanvas.height = 64;
+    const lctx = labelCanvas.getContext('2d');
+    lctx.fillStyle = '#080808';
+    lctx.fillRect(0, 0, 512, 64);
+    lctx.fillStyle = '#8e9c80';
+    lctx.font = 'bold 24px monospace';
+    lctx.textAlign = 'center';
+    lctx.textBaseline = 'middle';
+    lctx.fillText('W E T U B E   C I N É', 256, 32);
+
+    const labelGeo = new THREE.PlaneGeometry(1.6, 0.2);
+    const labelMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(labelCanvas) });
+    const labelMesh = new THREE.Mesh(labelGeo, labelMat);
+    labelMesh.position.set(0, 0.2, -4.8);
+    sceneGL.add(labelMesh);
+
+    // Bục sân khấu (Stage) NẰM PHÍA TRƯỚC MÀN HÌNH (z = -4.2)
     const stageGeo = new THREE.BoxGeometry(11.2, 0.38, 2.2);
     const stageMat = new THREE.MeshStandardMaterial({ color: 0x1a1c1e, roughness: 0.8 });
     const stage = new THREE.Mesh(stageGeo, stageMat);
-    stage.position.set(0, -0.31, -4.3);
-    scene.add(stage);
+    stage.position.set(0, -0.31, -4.2);
+    sceneGL.add(stage);
 
-    // Dải đèn rọi chân bục sân khấu (Footlights)
+    // Đèn rọi chân bục sân khấu (Footlights)
     const footlightGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.12, 12);
     const footlightMat = new THREE.MeshBasicMaterial({ color: 0xffdf88 });
     [-3.2, -2.0, -0.8, 0.8, 2.0, 3.2].forEach((x) => {
       const fl = new THREE.Mesh(footlightGeo, footlightMat);
-      fl.position.set(x, -0.1, -3.2);
-      scene.add(fl);
+      fl.position.set(x, -0.1, -3.1);
+      sceneGL.add(fl);
     });
 
-    // Khung màn hình 3D (Bezel)
-    const screenFrameGeo = new THREE.BoxGeometry(7.9, 4.45, 0.1);
-    const screenFrameMat = new THREE.MeshStandardMaterial({ color: 0x060606, roughness: 0.5 });
-    const screenFrame = new THREE.Mesh(screenFrameGeo, screenFrameMat);
-    screenFrame.position.set(0, 2.45, -5.2);
-    scene.add(screenFrame);
-
     // =================================================================
-    // 2 NHÂN VẬT ĐỨNG TRÊN SÂN KHẤU (STAGE PERFORMERS Y HỆT SCREENSHOT)
+    // 2 NHÂN VẬT ĐỨNG TRÊN SÂN KHẤU (z = -3.7) -> CHE TRƯỚC MÀN HÌNH YOUTUBE!
     // =================================================================
     const stageGroup = new THREE.Group();
-    scene.add(stageGroup);
+    sceneGL.add(stageGroup);
 
-    // Tạo nhân vật đứng trên sân khấu với vòng tròn dưới chân
     const createStagePerformer = (x, z, shirtColor, ringColor) => {
       const group = new THREE.Group();
       group.position.set(x, -0.12, z);
 
-      // Vòng tròn neon dưới chân (Ring Indicator)
+      // Vòng tròn neon dưới chân
       const ringGeo = new THREE.RingGeometry(0.24, 0.28, 32);
       const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide });
       const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -227,21 +289,20 @@ export default function Cinema3DScene({
       return group;
     };
 
-    // Người 1 (bên trái bục - áo xám xanh, vòng tròn hồng)
-    const performer1 = createStagePerformer(-0.65, -3.8, 0x93c5fd, 0xf43f5e);
+    const performer1 = createStagePerformer(-0.65, -3.7, 0x93c5fd, 0xf43f5e);
     stageGroup.add(performer1);
 
-    // Người 2 (bên phải bục - áo xanh rêu, vòng tròn hồng neon)
-    const performer2 = createStagePerformer(0.65, -3.8, 0x86efac, 0xec4899);
+    const performer2 = createStagePerformer(0.65, -3.7, 0x86efac, 0xec4899);
     stageGroup.add(performer2);
 
     // =================================================================
-    // CÁC HÀNG GHẾ RẠP CHIẾU 3D & THẺ TÊN (NAME TAGS) TRÊN LƯNG GHẾ
+    // CÁC HÀNG GHẾ RẠP CHIẾU 3D & KHÁN GIẢ (z = -2.6 đến +3.5)
+    // TẤT CẢ NẰM PHÍA TRƯỚC CHE NỬA DƯỚI MÀN HÌNH YOUTUBE!
     // =================================================================
     const chairBackGeo = new THREE.BoxGeometry(0.38, 0.45, 0.08);
     const chairSeatGeo = new THREE.BoxGeometry(0.38, 0.08, 0.35);
     const chairMat = new THREE.MeshStandardMaterial({ color: 0x24282c, roughness: 0.8 });
-    const vipChairMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.5 }); // Ghế VIP đỏ nhung
+    const vipChairMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.5 });
 
     const seatedBodyGeo = new THREE.BoxGeometry(0.3, 0.35, 0.24);
     const seatedHeadGeo = new THREE.SphereGeometry(0.18, 16, 16);
@@ -249,7 +310,6 @@ export default function Cinema3DScene({
     const hairGeo = new THREE.SphereGeometry(0.19, 16, 16, 0, Math.PI * 2, 0, Math.PI / 1.7);
     const hairMat = new THREE.MeshStandardMaterial({ color: 0x1f1916, roughness: 0.9 });
 
-    // Màu áo khán giả
     const shirtColors = [
       0x93c5fd, 0xfbcfe8, 0xfef08a, 0xa7f3d0,
       0xc4b5fd, 0xfde047, 0xd8ef82, 0xfca5a5,
@@ -258,33 +318,24 @@ export default function Cinema3DScene({
     const rows = 7;
     const cols = 10;
 
-    // Helper tạo texture Canvas chứa tên cho Thẻ Tên (Name Tag)
     const createNameTagTexture = (name) => {
       const canvas = document.createElement('canvas');
       canvas.width = 256;
       canvas.height = 64;
       const ctx = canvas.getContext('2d');
-
-      // Nền thẻ màu kem nhạt
       ctx.fillStyle = '#e2e8dc';
       ctx.beginPath();
       ctx.roundRect(4, 4, 248, 56, 12);
       ctx.fill();
-
-      // Viền thẻ
       ctx.strokeStyle = '#a6b89e';
       ctx.lineWidth = 4;
       ctx.stroke();
-
-      // Chữ tên
       ctx.fillStyle = '#1e241c';
       ctx.font = 'bold 26px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(name.slice(0, 12), 128, 34);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      return texture;
+      return new THREE.CanvasTexture(canvas);
     };
 
     const tagGeo = new THREE.PlaneGeometry(0.32, 0.08);
@@ -295,30 +346,27 @@ export default function Cinema3DScene({
 
       for (let c = 0; c < cols; c++) {
         let x = (c - (cols - 1) / 2) * 0.52;
-        if (c >= 5) x += 0.35; // Lối đi rạp ở giữa
+        if (c >= 5) x += 0.35;
 
         const seatIndex = r * cols + c;
         const isVip = (r === 0 && (c === 4 || c === 5));
 
-        // Ghế
         const back = new THREE.Mesh(chairBackGeo, isVip ? vipChairMat : chairMat);
         back.position.set(x, y + 0.3, z);
-        scene.add(back);
+        sceneGL.add(back);
 
         const seat = new THREE.Mesh(chairSeatGeo, isVip ? vipChairMat : chairMat);
         seat.position.set(x, y + 0.1, z + 0.14);
-        scene.add(seat);
+        sceneGL.add(seat);
 
-        // Vương miện hoàng gia trên ghế VIP
         if (isVip) {
           const crownGeo = new THREE.CylinderGeometry(0.16, 0.12, 0.14, 6);
           const crownMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 });
           const crown = new THREE.Mesh(crownGeo, crownMat);
           crown.position.set(x, y + 0.92, z);
-          scene.add(crown);
+          sceneGL.add(crown);
         }
 
-        // Khán giả ngồi trên ghế
         const isOccupied = seatIndex % 2 === 0 || r === 0 || r === 1 || r === 2;
         if (isOccupied) {
           const color = shirtColors[seatIndex % shirtColors.length];
@@ -326,46 +374,88 @@ export default function Cinema3DScene({
 
           const body = new THREE.Mesh(seatedBodyGeo, shirtMat);
           body.position.set(x, y + 0.32, z + 0.12);
-          scene.add(body);
+          sceneGL.add(body);
 
           const head = new THREE.Mesh(seatedHeadGeo, headMat);
           head.position.set(x, y + 0.62, z + 0.12);
-          scene.add(head);
+          sceneGL.add(head);
 
           const hair = new THREE.Mesh(hairGeo, hairMat);
           hair.rotation.x = -Math.PI / 2;
           hair.position.set(x, y + 0.64, z + 0.12);
-          scene.add(hair);
+          sceneGL.add(hair);
 
-          // THẺ TÊN (NAME TAG) GẮN TRÊN LƯNG GHẾ Y CHANG SCREENSHOT
           const personName = DEFAULT_NAMES[seatIndex % DEFAULT_NAMES.length];
           const tagMat = new THREE.MeshBasicMaterial({
             map: createNameTagTexture(personName),
             transparent: true,
           });
           const tag = new THREE.Mesh(tagGeo, tagMat);
-          tag.position.set(x, y + 0.28, z + 0.05); // Gắn sau lưng ghế
-          scene.add(tag);
+          tag.position.set(x, y + 0.28, z + 0.05);
+          sceneGL.add(tag);
         }
       }
     }
 
-    // Animation Loop
+    // =================================================================
+    // KHỞI TẠO YOUTUBE PLAYER TRONG CSS3D
+    // =================================================================
+    let checkInterval = setInterval(() => {
+      if (window.YT && window.YT.Player && document.getElementById('yt-3d-screen')) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+
+        playerRef.current = new window.YT.Player('yt-3d-screen', {
+          height: '100%',
+          width: '100%',
+          videoId: video ? video.id : '5qap5aO4i9A',
+          playerVars: {
+            autoplay: 1,
+            controls: 1,
+            modestbranding: 1,
+            rel: 0,
+            origin: window.location.origin,
+          },
+          events: {
+            onReady: (event) => {
+              event.target.setVolume(volume);
+              if (isMuted) event.target.mute();
+              if (playback?.currentTime) event.target.seekTo(playback.currentTime, true);
+              if (playback?.isPlaying) event.target.playVideo();
+            },
+            onStateChange: (event) => {
+              if (event.data === window.YT.PlayerState.ENDED) {
+                suppressSyncUntilRef.current = Date.now() + 3000;
+                if (onVideoEnded) onVideoEnded();
+                return;
+              }
+              if (isSyncingRef.current) return;
+              if (event.data === window.YT.PlayerState.PLAYING) {
+                if (onSyncAction) onSyncAction('play', event.target.getCurrentTime());
+              } else if (event.data === window.YT.PlayerState.PAUSED) {
+                if (onSyncAction) onSyncAction('pause', event.target.getCurrentTime());
+              }
+            },
+          },
+        });
+      }
+    }, 300);
+
+    // ANIMATION RENDER LOOP (Đồng bộ cả CSS3D & WebGL)
     let animationFrameId;
-    let clock = new THREE.Clock();
+    const clock = new THREE.Clock();
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      // Quả cầu disco xoay
       discoBall.rotation.y += 0.005;
 
-      // 2 Người đứng trên sân khấu đung đưa nhẹ như đang chill theo nhạc
       performer1.position.y = -0.12 + Math.sin(elapsed * 2) * 0.015;
       performer2.position.y = -0.12 + Math.cos(elapsed * 2.2) * 0.015;
 
-      renderer.render(scene, camera);
+      rendererCSS.render(sceneCSS, camera);
+      rendererGL.render(sceneGL, camera);
     };
     animate();
 
@@ -373,23 +463,72 @@ export default function Cinema3DScene({
       if (!container) return;
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
+      rendererCSS.setSize(container.clientWidth, container.clientHeight);
+      rendererGL.setSize(container.clientWidth, container.clientHeight);
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (checkInterval) clearInterval(checkInterval);
       cancelAnimationFrame(animationFrameId);
-      if (renderer.domElement && container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
+      if (playerRef.current) {
+        try { playerRef.current.destroy(); } catch (e) {}
+        playerRef.current = null;
       }
-      renderer.dispose();
+      if (rendererCSS.domElement && container.contains(rendererCSS.domElement)) {
+        container.removeChild(rendererCSS.domElement);
+      }
+      if (rendererGL.domElement && container.contains(rendererGL.domElement)) {
+        container.removeChild(rendererGL.domElement);
+      }
+      rendererGL.dispose();
     };
   }, []);
 
+  // Xử lý đổi video hoặc Replay
+  useEffect(() => {
+    if (!playerRef.current || !video?.id) return;
+
+    if (currentVideoIdRef.current === video.id) {
+      if (playback?.currentTime === 0) {
+        isSyncingRef.current = true;
+        suppressSyncUntilRef.current = Date.now() + 2500;
+        playerRef.current.seekTo(0, true);
+        playerRef.current.playVideo();
+        setTimeout(() => { isSyncingRef.current = false; }, 500);
+      }
+      return;
+    }
+
+    currentVideoIdRef.current = video.id;
+    if (playerRef.current.loadVideoById) {
+      isSyncingRef.current = true;
+      suppressSyncUntilRef.current = Date.now() + 2500;
+      playerRef.current.loadVideoById({
+        videoId: video.id,
+        startSeconds: playback?.currentTime || 0,
+      });
+      setTimeout(() => {
+        if (playback?.isPlaying) playerRef.current?.playVideo();
+        isSyncingRef.current = false;
+      }, 600);
+    }
+  }, [video?.id, playback?.currentTime]);
+
+  // Âm lượng
+  useEffect(() => {
+    if (!playerRef.current) return;
+    if (isMuted) playerRef.current.mute();
+    else {
+      playerRef.current.unMute();
+      playerRef.current.setVolume(volume);
+    }
+  }, [volume, isMuted]);
+
   return (
     <div className="relative w-full h-full overflow-hidden select-none">
-      <div ref={mountRef} className="absolute inset-0 w-full h-full" />
+      <div ref={containerRef} className="absolute inset-0 w-full h-full" />
     </div>
   );
 }

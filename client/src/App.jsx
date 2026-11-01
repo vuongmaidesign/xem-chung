@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 
 import Cinema3DScene from './components/Cinema3DScene';
-import ScreenPlayer from './components/ScreenPlayer';
 import ChatBox from './components/ChatBox';
 import QueueModal from './components/QueueModal';
 import {
@@ -370,37 +369,20 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0a0c0e] text-[#cad6bb] select-none font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* 1. KHUNG CẢNH RẠP CHIẾU 3D THREE.JS (LÀM NỀN TOÀN MÀN HÌNH) */}
+      {/* 1. KHUNG CẢNH RẠP CHIẾU 3D THREE.JS (TÍCH HỢP MÀN HÌNH YOUTUBE PHÍA SAU KHÁN GIẢ) */}
       <div className="absolute inset-0 z-0">
         <Cinema3DScene
-          seats={roomState.seats}
-          users={roomState.users}
-          currentUserId={socket?.id}
+          video={roomState.currentVideo}
+          playback={roomState.playback}
+          volume={volume}
+          isMuted={isMuted}
+          onSyncAction={handleSyncAction}
+          onVideoEnded={handleVideoEnded}
           isStandingOnStage={isStandingOnStage}
-          myProfile={profile}
         />
       </div>
 
-      {/* 2. MÀN HÌNH YOUTUBE GHÉP KHỚP HOÀN HẢO VÀO TƯỜNG RẠP 3D */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-[17%] w-[54%] max-w-[900px] aspect-[16/9.1] z-10 flex flex-col items-center">
-        <div className="w-full h-full bg-black rounded-sm border-[6px] border-[#0a0a0a] shadow-[0_10px_50px_rgba(0,0,0,0.9)] overflow-hidden relative">
-          <ScreenPlayer
-            video={roomState.currentVideo}
-            playback={roomState.playback}
-            onSyncAction={handleSyncAction}
-            onVideoEnded={handleVideoEnded}
-            volume={volume}
-            isMuted={isMuted}
-          />
-        </div>
-
-        {/* Chữ nổi WETUBE CINÉ ở chân màn hình */}
-        <div className="mt-1 px-3 py-0.5 rounded bg-black/60 border border-white/5 text-[9px] font-mono tracking-[3px] text-[#8e9c80] uppercase">
-          WETUBE CINÉ
-        </div>
-      </div>
-
-      {/* 3. BONG BÓNG CHAT NỔI TRÊN ĐẦU KHÁN GIẢ (SPEECH BUBBLES) */}
+      {/* 2. BONG BÓNG CHAT NỔI TRÊN ĐẦU KHÁN GIẢ (SPEECH BUBBLES) */}
       <div className="absolute inset-0 pointer-events-none z-20">
         {floatingBubbles.map((bubble) => (
           <div
