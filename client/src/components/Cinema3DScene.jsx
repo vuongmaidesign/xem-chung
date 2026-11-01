@@ -278,48 +278,201 @@ export default function Cinema3DScene({
     }
 
     // =================================================================
-    // 11. NHÓM KHÁN GIẢ & SÂN KHẤU DYNAMIC (AI VÀO THÌ MỚI CÓ NGƯỜI ĐÓ!)
+    // 11. HỆ THỐNG NHÂN VẬT 3D CỰC ĐẸP & CHUYỂN ĐỘNG (WALKING & CHEERING)
     // =================================================================
     const audienceGroup = new THREE.Group();
     sceneGL.add(audienceGroup);
 
-    let activeStageGuys = [];
+    // Lưu trữ vị trí thực tế và animation của từng user
+    const charactersMap = new Map(); // userId -> { group, armL, armR, legL, legR, isSeated, isStage, isWalking, waypoints, ... }
+    const activeStageGuys = [];
 
-    // Helper tạo Name Tag nhỏ gắn lưng ghế hoặc trên đầu
+    // Helper tạo Texture Name Tag gắn sau lưng áo (Chuẩn 100% choigivui.com!)
     const createNameTagTexture = (name, isMe = false) => {
       const c = document.createElement('canvas');
       c.width = 256;
-      c.height = 64;
+      c.height = 72;
       const ctx = c.getContext('2d');
 
+      // Nền badge
       ctx.fillStyle = isMe ? '#d8ef82' : '#d2dacb';
       ctx.beginPath();
-      ctx.roundRect(4, 4, 248, 56, 12);
+      ctx.roundRect(6, 6, 244, 60, 14);
       ctx.fill();
 
+      // Viền badge
       ctx.strokeStyle = isMe ? '#ffffff' : '#a6b89e';
-      ctx.lineWidth = isMe ? 5 : 4;
+      ctx.lineWidth = isMe ? 6 : 4;
       ctx.stroke();
 
+      // Chữ tên
       ctx.fillStyle = '#1e241c';
-      ctx.font = 'bold 24px sans-serif';
+      ctx.font = 'bold 26px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(name.slice(0, 14), 128, 34);
+      ctx.fillText(name.slice(0, 12), 128, 38);
 
       return new THREE.CanvasTexture(c);
     };
 
-    // Hàm render động: CHỈ vẽ người thực sự có mặt trong phòng!
-    const updateAudience = (userList, seatList, stageStatus) => {
-      // Dọn sạch khán giả cũ
-      while (audienceGroup.children.length > 0) {
-        const obj = audienceGroup.children[0];
-        audienceGroup.remove(obj);
-        if (obj.geometry) obj.geometry.dispose();
-      }
-      activeStageGuys = [];
+    // Helper dựng nhân vật hoàn chỉnh (Đầu, tóc, thân áo, 2 tay có bàn tay, 2 chân, badge tên lưng áo)
+    const createCharacter = ({ color, name, isMe, isStage, isSeated }) => {
+      const g = new THREE.Group();
+      const skinMat = getMat('#cba07d', 0.6);
+      const hairMat = getMat('#2b221c', 0.9);
+      const shirtMat = getMat(color || '#93c5fd', 0.7);
+      const pantsMat = getMat('#1e293b', 0.85);
 
+      // 1. Thân áo (Torso)
+      const torso = new THREE.Mesh(boxGeo, shirtMat);
+      torso.scale.set(0.68, 0.82, 0.46);
+      torso.position.y = 1.05;
+      g.add(torso);
+
+      // Badge tên gắn ngay sau lưng áo (Chuẩn theo screenshot!)
+      const badgeTex = createNameTagTexture(name, isMe);
+      const badge = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.56, 0.16),
+        new THREE.MeshBasicMaterial({ map: badgeTex, transparent: true })
+      );
+      badge.position.set(0, 1.1, 0.235);
+      g.add(badge);
+
+      // 2. Đầu & Tóc (Head & Hair)
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 20, 16), skinMat);
+      head.position.y = 1.68;
+      g.add(head);
+
+      const hair = new THREE.Mesh(
+        new THREE.SphereGeometry(0.325, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.48),
+        hairMat
+      );
+      hair.rotation.x = -Math.PI / 2;
+      hair.position.y = 1.71;
+      g.add(hair);
+
+      // 3. Hai cánh tay (Arms có khớp vai và bàn tay)
+      const armGeo = new THREE.CylinderGeometry(0.09, 0.08, 0.6, 16);
+      const handGeo = new THREE.SphereGeometry(0.09, 12, 12);
+
+      // Tay trái
+      const armL = new THREE.Group();
+      armL.position.set(-0.43, 1.35, 0);
+      const armMeshL = new THREE.Mesh(armGeo, shirtMat);
+      armMeshL.position.y = -0.26;
+      armL.add(armMeshL);
+      const handMeshL = new THREE.Mesh(handGeo, skinMat);
+      handMeshL.position.y = -0.56;
+      armL.add(handMeshL);
+      g.add(armL);
+
+      // Tay phải
+      const armR = new THREE.Group();
+      armR.position.set(0.43, 1.35, 0);
+      const armMeshR = new THREE.Mesh(armGeo, shirtMat);
+      armMeshR.position.y = -0.26;
+      armR.add(armMeshR);
+      const handMeshR = new THREE.Mesh(handGeo, skinMat);
+      handMeshR.position.y = -0.56;
+      armR.add(handMeshR);
+      g.add(armR);
+
+      // 4. Hai chân (Legs có quần và giày)
+      const legGeo = new THREE.CylinderGeometry(0.11, 0.1, 0.62, 16);
+      const shoeGeo = new THREE.BoxGeometry(0.18, 0.12, 0.28);
+
+      const legL = new THREE.Group();
+      legL.position.set(-0.19, 0.64, 0);
+      const legMeshL = new THREE.Mesh(legGeo, pantsMat);
+      legMeshL.position.y = -0.28;
+      legL.add(legMeshL);
+      const shoeMeshL = new THREE.Mesh(shoeGeo, getMat('#0f172a', 0.9));
+      shoeMeshL.position.set(0, -0.58, 0.04);
+      legL.add(shoeMeshL);
+      g.add(legL);
+
+      const legR = new THREE.Group();
+      legR.position.set(0.19, 0.64, 0);
+      const legMeshR = new THREE.Mesh(legGeo, pantsMat);
+      legMeshR.position.y = -0.28;
+      legR.add(legMeshR);
+      const shoeMeshR = new THREE.Mesh(shoeGeo, getMat('#0f172a', 0.9));
+      shoeMeshR.position.set(0, -0.58, 0.04);
+      legR.add(shoeMeshR);
+      g.add(legR);
+
+      // Vòng tròn neon dưới chân khi lên sân khấu
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.48, 0.58, 32),
+        new THREE.MeshBasicMaterial({ color: color || '#ec4899', side: THREE.DoubleSide })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.02;
+      ring.visible = Boolean(isStage);
+      g.add(ring);
+
+      // Thiết lập tư thế ban đầu:
+      const setPose = (pose) => {
+        if (pose === 'stage') {
+          // Tư thế trên sân khấu: Giơ 2 tay lên cao quẩy nhạc \o/ như ảnh thực tế!
+          ring.visible = true;
+          legL.visible = true;
+          legR.visible = true;
+          torso.position.y = 1.05;
+          head.position.y = 1.68;
+          hair.position.y = 1.71;
+          badge.position.y = 1.1;
+          armL.position.set(-0.43, 1.35, 0);
+          armR.position.set(0.43, 1.35, 0);
+          armL.rotation.set(0, 0, Math.PI * 0.78);
+          armR.rotation.set(0, 0, -Math.PI * 0.78);
+          legL.rotation.set(0, 0, 0);
+          legR.rotation.set(0, 0, 0);
+        } else if (pose === 'seated') {
+          // Tư thế ngồi: Chân gập/ẩn, 2 tay đặt thoải mái về phía trước tựa vào thành ghế
+          ring.visible = false;
+          legL.visible = false;
+          legR.visible = false;
+          torso.position.y = 0.72;
+          badge.position.y = 0.76;
+          head.position.y = 1.34;
+          hair.position.y = 1.37;
+          armL.position.set(-0.42, 0.98, 0.1);
+          armR.position.set(0.42, 0.98, 0.1);
+          armL.rotation.set(Math.PI / 3.5, 0, 0.15);
+          armR.rotation.set(Math.PI / 3.5, 0, -0.15);
+        } else if (pose === 'walking') {
+          // Tư thế đi đứng
+          ring.visible = false;
+          legL.visible = true;
+          legR.visible = true;
+          torso.position.y = 1.05;
+          head.position.y = 1.68;
+          hair.position.y = 1.71;
+          badge.position.y = 1.1;
+          armL.position.set(-0.43, 1.35, 0);
+          armR.position.set(0.43, 1.35, 0);
+          armL.rotation.set(0, 0, 0.08);
+          armR.rotation.set(0, 0, -0.08);
+        }
+      };
+
+      setPose(isStage ? 'stage' : (isSeated ? 'seated' : 'walking'));
+
+      return {
+        group: g,
+        armL,
+        armR,
+        legL,
+        legR,
+        ring,
+        torso,
+        setPose,
+      };
+    };
+
+    // Hàm render động: Khán giả di chuyển, đi lại và ngồi ghế mượt mà!
+    const updateAudience = (userList, seatList, stageStatus) => {
       let currentAudience = Array.isArray(userList) && userList.length > 0 ? [...userList] : [];
       if (currentAudience.length === 0) {
         currentAudience = [
@@ -334,100 +487,94 @@ export default function Cinema3DScene({
         ];
       }
 
-      const stageGuys = [];
-      const seatedGuys = [];
+      const activeUserIds = new Set(currentAudience.map(u => u.id));
 
+      // Xoá những nhân vật đã rời rạp
+      for (const [uid, char] of charactersMap.entries()) {
+        if (!activeUserIds.has(uid)) {
+          audienceGroup.remove(char.group);
+          charactersMap.delete(uid);
+        }
+      }
+
+      activeStageGuys.length = 0;
+
+      // Tính vị trí sân khấu
+      const stageUsers = currentAudience.filter(u => (u.id === currentUserId && stageStatus) || Boolean(u.isStage));
+      const nStage = stageUsers.length;
+
+      // Cập nhật hoặc tạo mới nhân vật cho từng user
       currentAudience.forEach((u) => {
-        const onStage = (u.id === currentUserId && stageStatus) || Boolean(u.isStage);
-        if (onStage) stageGuys.push(u);
-        else seatedGuys.push(u);
-      });
+        const isMe = (u.id === currentUserId || u.id === 'me');
+        const onStage = isMe ? stageStatus : Boolean(u.isStage);
 
-      // 1. VẼ NHỮNG NGƯỜI ĐANG ĐỨNG TRÊN SÂN KHẤU
-      const nStage = stageGuys.length;
-      stageGuys.forEach((u, i) => {
-        let sx = 0;
-        if (nStage === 2) sx = i === 0 ? -1.8 : 1.8;
-        else if (nStage === 3) sx = (i - 1) * 2.8;
-        else if (nStage > 3) sx = (i - (nStage - 1) / 2) * 2.4;
+        let targetX = 0, targetY = 0, targetZ = 0;
+        let isSeated = false;
 
-        const sy = 0.35;
-        const sz = -6.5;
+        if (onStage) {
+          const idx = stageUsers.findIndex(s => s.id === u.id);
+          if (nStage === 1) targetX = 0;
+          else if (nStage === 2) targetX = idx === 0 ? -1.8 : 1.8;
+          else if (nStage === 3) targetX = (idx - 1) * 2.8;
+          else targetX = (idx - (nStage - 1) / 2) * 2.2;
+          targetY = 0.35;
+          targetZ = -6.5;
+        } else {
+          isSeated = true;
+          let seatPos = u.seatId ? seatMap.get(u.seatId) : null;
+          if (!seatPos) seatPos = seatMap.get('A5') || { x: 0, y: 0, z: 0 };
+          targetX = seatPos.x;
+          targetY = seatPos.y + 0.08;
+          targetZ = seatPos.z + 0.05;
+        }
 
-        // Vòng tròn neon dưới chân
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry(0.48, 0.56, 32),
-          new THREE.MeshBasicMaterial({ color: u.color || '#ec4899', side: THREE.DoubleSide })
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(sx, sy + 0.02, sz);
-        audienceGroup.add(ring);
+        let char = charactersMap.get(u.id);
 
-        // Nhân vật
-        const g = new THREE.Group();
-        g.position.set(sx, sy, sz);
+        if (!char) {
+          // Tạo nhân vật mới
+          const displayName = isMe ? `${u.nickname || 'Bạn'} (Bạn)` : (u.nickname || 'Khán giả');
+          char = createCharacter({
+            color: u.color || '#93c5fd',
+            name: displayName,
+            isMe,
+            isStage: onStage,
+            isSeated,
+          });
 
-        const body = new THREE.Mesh(boxGeo, getMat(u.color || '#93c5fd', 0.7));
-        body.position.set(0, 1.23, 0);
-        body.scale.set(0.68, 0.83, 0.48);
-        g.add(body);
+          char.group.position.set(targetX, targetY, targetZ);
+          audienceGroup.add(char.group);
+          charactersMap.set(u.id, char);
+        } else {
+          // Nếu đã tồn tại nhân vật, kiểm tra xem vị trí có đổi không để tạo bước đi (Walking Animation!)
+          const dx = targetX - char.group.position.x;
+          const dz = targetZ - char.group.position.z;
+          const dist = Math.hypot(dx, dz);
 
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 16), getMat('#cba07d', 0.6));
-        head.position.set(0, 1.99, 0);
-        g.add(head);
+          if (dist > 0.4) {
+            // TẠO LỘ TRÌNH ĐI BỘ QUA LỐI ĐI RẠP (AISLE WALKING PATH)
+            const startX = char.group.position.x;
+            const startZ = char.group.position.z;
+            const aisleX = startX >= 0 ? 0.8 : -0.8;
+            const targetAisleX = targetX >= 0 ? 0.8 : -0.8;
 
-        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.342, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#392d25', 0.9));
-        hair.rotation.x = -Math.PI / 2;
-        hair.position.set(0, 2.02, 0);
-        g.add(hair);
-
-        audienceGroup.add(g);
-        activeStageGuys.push(g);
-      });
-
-      // 2. VẼ NHỮNG NGƯỜI ĐANG NGỒI TRÊN GHẾ (CÒN LẠI ĐỂ TRỐNG HOÀN TOÀN!)
-      const usedSeatIds = new Set();
-      seatedGuys.forEach((u) => {
-        let seatPos = u.seatId ? seatMap.get(u.seatId) : null;
-        if (!seatPos || usedSeatIds.has(seatPos.id)) {
-          // Gán ghế trống gần nhất
-          for (const [id, pos] of seatMap.entries()) {
-            if (!usedSeatIds.has(id)) {
-              seatPos = pos;
-              break;
-            }
+            char.isWalking = true;
+            char.walkStartTime = performance.now();
+            char.walkDuration = Math.min(2200, Math.max(900, dist * 250)); // Thời gian đi bộ tỉ lệ theo quãng đường
+            char.startPos = { x: startX, y: char.group.position.y, z: startZ };
+            char.targetPos = { x: targetX, y: targetY, z: targetZ };
+            char.aislePos1 = { x: aisleX, y: Math.max(char.group.position.y, targetY), z: startZ };
+            char.aislePos2 = { x: targetAisleX, y: Math.max(char.group.position.y, targetY), z: targetZ };
+            char.targetPose = onStage ? 'stage' : (isSeated ? 'seated' : 'walking');
+            char.setPose('walking');
+          } else {
+            char.group.position.set(targetX, targetY, targetZ);
+            char.setPose(onStage ? 'stage' : (isSeated ? 'seated' : 'walking'));
           }
         }
-        if (!seatPos) return;
-        usedSeatIds.add(seatPos.id);
 
-        const { x, y, z } = seatPos;
-        const isMe = (u.id === currentUserId || u.id === 'me');
-
-        // Thân người ngồi
-        const body = new THREE.Mesh(boxGeo, getMat(u.color || '#93c5fd', 0.7));
-        body.position.set(x, y + 0.8, z + 0.25);
-        body.scale.set(0.68, 0.75, 0.5);
-        audienceGroup.add(body);
-
-        // Đầu & Tóc
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), getMat('#cba07d', 0.6));
-        head.position.set(x, y + 1.4, z + 0.25);
-        audienceGroup.add(head);
-
-        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.46), getMat('#2b221c', 0.9));
-        hair.rotation.x = -Math.PI / 2;
-        hair.position.set(x, y + 1.44, z + 0.25);
-        audienceGroup.add(hair);
-
-        // Thẻ tên gắn sau lưng ghế
-        const displayName = isMe ? `${u.nickname || 'Bạn'} (Bạn)` : (u.nickname || 'Khán giả');
-        const tag = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.75, 0.2),
-          new THREE.MeshBasicMaterial({ map: createNameTagTexture(displayName, isMe), transparent: true })
-        );
-        tag.position.set(x, y + 0.65, z + 0.19);
-        audienceGroup.add(tag);
+        if (onStage) {
+          activeStageGuys.push(char);
+        }
       });
     };
 
@@ -507,18 +654,85 @@ export default function Cinema3DScene({
       }
     }, 300);
 
-    // ANIMATION RENDER LOOP (Đồng bộ CSS3D & WebGL)
+    // ANIMATION RENDER LOOP (Đồng bộ CSS3D & WebGL, Walking & Cheering Animations)
     let animationFrameId;
     const clock = new THREE.Clock();
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
+      const now = performance.now();
 
       discoMesh.rotation.y += 0.005;
 
+      // 1. ANIMATION NGƯỜI ĐI BỘ (WALKING ANIMATION)
+      for (const char of charactersMap.values()) {
+        if (char.isWalking) {
+          const progress = Math.min(1, (now - char.walkStartTime) / char.walkDuration);
+
+          let curX, curY, curZ;
+          let dirX = 0, dirZ = 0;
+
+          if (progress < 0.25) {
+            // Bước 1: Từ ghế bước ra lối đi
+            const p = progress / 0.25;
+            curX = THREE.MathUtils.lerp(char.startPos.x, char.aislePos1.x, p);
+            curY = THREE.MathUtils.lerp(char.startPos.y, char.aislePos1.y, p);
+            curZ = char.startPos.z;
+            dirX = char.aislePos1.x - char.startPos.x;
+          } else if (progress < 0.75) {
+            // Bước 2: Đi dọc theo lối đi rạp chiếu
+            const p = (progress - 0.25) / 0.5;
+            curX = THREE.MathUtils.lerp(char.aislePos1.x, char.aislePos2.x, p);
+            curY = THREE.MathUtils.lerp(char.aislePos1.y, char.aislePos2.y, p);
+            curZ = THREE.MathUtils.lerp(char.aislePos1.z, char.aislePos2.z, p);
+            dirX = char.aislePos2.x - char.aislePos1.x;
+            dirZ = char.aislePos2.z - char.aislePos1.z;
+          } else {
+            // Bước 3: Từ lối đi bước vào ghế đích / bậc sân khấu
+            const p = (progress - 0.75) / 0.25;
+            curX = THREE.MathUtils.lerp(char.aislePos2.x, char.targetPos.x, p);
+            curY = THREE.MathUtils.lerp(char.aislePos2.y, char.targetPos.y, p);
+            curZ = THREE.MathUtils.lerp(char.aislePos2.z, char.targetPos.z, p);
+            dirX = char.targetPos.x - char.aislePos2.x;
+            dirZ = char.targetPos.z - char.aislePos2.z;
+          }
+
+          char.group.position.set(curX, curY, curZ);
+
+          // Xoay nhân vật hướng về phía đang bước đi
+          if (Math.hypot(dirX, dirZ) > 0.05) {
+            char.group.rotation.y = Math.atan2(dirX, dirZ);
+          }
+
+          // Vung 2 chân & 2 tay so le nhịp nhàng
+          const walkCycle = (now - char.walkStartTime) * 0.014;
+          char.legL.rotation.x = Math.sin(walkCycle) * 0.65;
+          char.legR.rotation.x = -Math.sin(walkCycle) * 0.65;
+          char.armL.rotation.x = -Math.sin(walkCycle) * 0.5;
+          char.armR.rotation.x = Math.sin(walkCycle) * 0.5;
+          char.torso.position.y = 1.05 + Math.abs(Math.sin(walkCycle * 2)) * 0.04;
+
+          if (progress >= 1) {
+            char.isWalking = false;
+            char.group.position.set(char.targetPos.x, char.targetPos.y, char.targetPos.z);
+            char.group.rotation.y = 0; // Quay mặt về phía màn hình
+            char.setPose(char.targetPose);
+          }
+        }
+      }
+
+      // 2. ANIMATION NGƯỜI TRÊN SÂN KHẤU (CHEERING & DANCING \o/)
       activeStageGuys.forEach((guy, idx) => {
-        guy.position.y = 0.35 + Math.sin(elapsed * 2 + idx) * 0.02;
+        if (!guy.isWalking) {
+          // Giơ 2 tay quẩy lắc lư theo điệu nhạc
+          guy.armL.rotation.z = Math.PI * 0.75 + Math.sin(elapsed * 4 + idx) * 0.16;
+          guy.armR.rotation.z = -Math.PI * 0.75 - Math.sin(elapsed * 4 + idx) * 0.16;
+          guy.armL.rotation.x = Math.cos(elapsed * 3 + idx) * 0.18;
+          guy.armR.rotation.x = Math.cos(elapsed * 3 + idx) * 0.18;
+          guy.group.position.y = 0.35 + Math.abs(Math.sin(elapsed * 4 + idx)) * 0.035;
+          guy.torso.rotation.y = Math.sin(elapsed * 2.5 + idx) * 0.1;
+        }
       });
 
       rendererCSS.render(sceneCSS, camera);
