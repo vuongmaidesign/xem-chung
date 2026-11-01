@@ -1,29 +1,21 @@
 # 🍿 CinéParty - Rạp Chiếu Phim & Nghe Nhạc Ảo (Watch Together)
 
-Ứng dụng xem video YouTube và nghe nhạc cùng nhau thời gian thực với trải nghiệm **Rạp chiếu phim ảo (Virtual Cinema)** lấy cảm hứng từ Wetube Ciné (`choigivui.com`).
+Ứng dụng xem video YouTube và nghe nhạc cùng nhau thời gian thực với trải nghiệm **Rạp chiếu phim ảo 3D (Virtual Cinema 3D)** lấy cảm hứng từ Wetube Ciné (`choigivui.com`).
 
-![CinéParty Banner](https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=1200&auto=format&fit=crop)
+🌐 **Link truy cập trực tiếp trên Web (GitHub Pages)**:  
+👉 **[https://vuongmaidesign.github.io/xem-chung/](https://vuongmaidesign.github.io/xem-chung/)**
 
 ---
 
 ## ✨ Tính Năng Nổi Bật
 
-- 🎬 **Màn hình rạp chiếu cong 2.5D**: Mô phỏng hiệu ứng ánh sáng đèn chiếu rạp phim với YouTube Player chính thức.
-- 💺 **Sơ đồ ghế ngồi tương tác**: 
-  - Mọi người vào phòng được tự do click chọn ghế ngồi bất kỳ (Hàng A, B, C, D).
-  - Ghế phát sáng màu riêng biệt, hiển thị Avatar và Biệt danh của từng người.
-  - Hỗ trợ đổi ghế hoặc đứng dậy bất cứ lúc nào.
-- ⚡ **Đồng bộ thời gian thực (Realtime Sync & Time Drift Correction)**:
-  - Play, Pause, Seek (tua) đồng bộ tức thì cho tất cả khán giả trong rạp qua Socket.io.
-  - Cơ chế tự động sửa lệch thời gian (Drift check mỗi 4 giây) giúp không ai bị trễ nhịp so với phòng.
-- 💬 **Bong bóng Chat trên đầu ghế & Live Reactions**:
-  - Khi ai đó nhắn tin, bong bóng trò chuyện (*Speech Bubble*) sẽ nổi trực tiếp trên đầu chiếc ghế người đó đang ngồi.
-  - Nút thả reaction nhanh (❤️, 😂, 🍿, 🔥, 👏, 🚀, 🎵) bay vọt lên màn hình rạp chiếu.
-- 📋 **Hàng đợi phát nhạc (Queue) & Bỏ phiếu qua bài (Vote Skip)**:
-  - Dán bất kỳ link YouTube, Video ngắn hoặc Shorts nào vào để xếp hàng hoặc bấm phát ngay.
-  - Bỏ phiếu qua bài khi có trên 50% khán giả tán thành.
-- 🚪 **Tạo phòng riêng cho hội bạn**:
-  - Chỉ cần đổi đường dẫn `http://localhost:4000/?room=chill-dem-muon` hoặc bấm nút **"Mời bạn"** để copy link gửi cho nhóm bạn bè.
+- 🎬 **Rạp chiếu phim 3D hoàn chỉnh (Three.js WebGL)**: Màn hình chiếu trung tâm, đèn sọc LED tường, loa cây sound tower, quả cầu disco xoay trên trần.
+- 🧍 **Khán giả 3D & Thẻ tên (Name Tags)**: Các hàng ghế bậc thang dốc xuống với khán giả 3D nhiều màu áo, gắn thẻ tên biệt danh sau lưng từng ghế.
+- 🎤 **Lên bục sân khấu (Stage Performers)**: Bước lên bục biểu diễn trước màn hình với vòng tròn neon phát sáng dưới chân.
+- 💬 **Bong bóng thoại 3D (Speech Bubbles)**: Chat trực tiếp nổi bong bóng thoại trên đầu nhân vật trong rạp.
+- 📋 **Hàng chờ & Gửi video**: Gửi video YouTube không giới hạn, bình chọn thứ tự chiếu.
+- ⚡ **Vote Skip 35%**: Cơ chế bình chọn bỏ qua video khi đủ 35% khán giả tán thành.
+- 🔄 **Lặp full bài (Full Replay)**: Khi hết bài và hàng chờ trống, tự động phát lại từ đầu trọn vẹn.
 
 ---
 
