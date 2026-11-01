@@ -216,7 +216,8 @@ export default function Cinema3DScene({
     iframeDiv.style.height = `${screenHeight}px`;
     iframeDiv.style.background = '#000000';
     iframeDiv.style.overflow = 'hidden';
-    iframeDiv.style.pointerEvents = 'auto';
+    // Màn hình rạp chiếu phim chuẩn: Khán giả không click pause làm đứng phim của cả rạp
+    iframeDiv.style.pointerEvents = 'none';
     iframeDiv.innerHTML = '<div id="yt-exact-screen" style="width: 100%; height: 100%;"></div>';
 
     const cssScreen = new CSS3DObject(iframeDiv);

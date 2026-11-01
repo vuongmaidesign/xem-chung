@@ -158,6 +158,10 @@ export class RoomManager {
       }
     }
 
+    if (!room.hostId) {
+      room.hostId = socketId;
+    }
+
     const user = {
       id: socketId,
       nickname: profile.nickname || `Khán giả_${socketId.slice(0, 4)}`,
@@ -165,14 +169,11 @@ export class RoomManager {
       color: profile.color || '#93c5fd',
       seatId: assignedSeatId,
       isStage: false,
+      isHost: room.hostId === socketId,
       joinedAt: Date.now(),
     };
 
     room.users.set(socketId, user);
-
-    if (!room.hostId) {
-      room.hostId = socketId;
-    }
 
     return { room, user };
   }

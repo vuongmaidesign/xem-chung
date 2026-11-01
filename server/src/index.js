@@ -121,9 +121,14 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Đồng bộ Play / Pause / Seek
+  // Đồng bộ Play / Pause / Seek (CHỈ DÀNH CHO HOST/ADMIN PHÒNG)
   socket.on('sync-action', ({ action, time }) => {
     if (!currentRoomId) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    if (room.hostId && room.hostId !== socket.id) {
+      // Khán giả thông thường không có quyền pause/seek làm gián đoạn rạp chiếu
+      return;
+    }
     const updatedPlayback = roomManager.updatePlayback(currentRoomId, { action, time });
     if (updatedPlayback) {
       socket.to(currentRoomId).emit('sync-playback', {
@@ -151,9 +156,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Bấm chuyển / Skip bài hiện tại
+  // Bấm chuyển / Skip bài trực tiếp (CHỈ DÀNH CHO HOST/ADMIN, KHÁN GIẢ PHẢI BẤM VOTE BỎ QUA)
   socket.on('skip-video', () => {
     if (!currentRoomId) return;
+    const room = roomManager.getOrCreateRoom(currentRoomId);
+    if (room.hostId && room.hostId !== socket.id) {
+      return;
+    }
     const result = roomManager.playNext(currentRoomId);
     const room = roomManager.getOrCreateRoom(currentRoomId);
 
